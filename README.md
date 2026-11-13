@@ -7,7 +7,7 @@
 *Your Store, Your Way* — a full online store with a powerful admin panel (the **Sitepanel**),
 built with PHP, MySQL and modern web technologies.
 
-![PHP](https://img.shields.io/badge/PHP-8.2%2B-777BB4?logo=php&logoColor=white)
+![PHP](https://img.shields.io/badge/PHP-8.5.12-777BB4?logo=php&logoColor=white)
 ![CodeIgniter](https://img.shields.io/badge/CodeIgniter-4.7-EF4223?logo=codeigniter&logoColor=white)
 ![MySQL](https://img.shields.io/badge/MySQL-8.x-4479A1?logo=mysql&logoColor=white)
 ![Bootstrap](https://img.shields.io/badge/Bootstrap-5.3-7952B3?logo=bootstrap&logoColor=white)
@@ -120,7 +120,7 @@ Super admins see every section; sub-admins see only the sections granted to them
 
 | Layer | Technology |
 |---|---|
-| Backend | PHP 8.2+, [CodeIgniter 4.7](https://codeigniter.com/) (HMVC modules) |
+| Backend | PHP 8.5.12, [CodeIgniter 4.7](https://codeigniter.com/) (HMVC modules) |
 | Database | MySQL 8.x (MySQLi driver, `utf8mb4`) — MariaDB 10.4+ also works |
 | Frontend | HTML5, CSS3, Bootstrap 5.3, vanilla JavaScript, Google Fonts |
 | Admin editor | CKEditor 4 |
@@ -132,7 +132,7 @@ Super admins see every section; sub-admins see only the sections granted to them
 
 | Component | Requirement |
 |---|---|
-| PHP | **8.2 or newer** (a patched release is recommended) |
+| PHP | **8.5.12** (recommended; the minimum supported by CodeIgniter is 8.2) |
 | PHP extensions | `intl`, `mbstring`, `mysqli`, `fileinfo`, `dom`/`libxml`, `json`; `openssl` for SMTP over TLS |
 | Database | MySQL 8.x or MariaDB 10.4+ |
 | Web server | Apache with `mod_rewrite` and `AllowOverride All` |
@@ -140,7 +140,7 @@ Super admins see every section; sub-admins see only the sections granted to them
 | Node.js | 18+ (only to run the Playwright tests) |
 
 > **WAMP users:** the PHP version used by Apache is chosen in *WAMP tray → PHP → Version*.
-> It must be 8.2 or newer — with an older version every page shows
+> Select PHP 8.5.12 — with a version older than 8.2 every page shows
 > *"Your PHP version must be 8.2 or higher to run CodeIgniter."*
 
 ## Installation Instructions
