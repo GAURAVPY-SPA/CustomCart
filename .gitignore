@@ -1,0 +1,163 @@
+#-------------------------
+# Operating Specific Junk Files
+#-------------------------
+
+# OS X
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# OS X Thumbnails
+._*
+
+# Windows image file caches
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Recycle Bin used on file shares
+$RECYCLE.BIN/
+
+# Windows Installer files
+*.cab
+*.msi
+*.msm
+*.msp
+
+# Windows shortcuts
+*.lnk
+
+# Linux
+*~
+
+# KDE directory preferences
+.directory
+
+# Linux trash folder which might appear on any partition or disk
+.Trash-*
+
+#-------------------------
+# Environment Files
+#-------------------------
+# These should never be under version control,
+# as it poses a security risk.
+.env
+.env.*
+!.env.example
+.vagrant
+Vagrantfile
+
+#-------------------------
+# Database dumps
+#-------------------------
+# Only the sanitized demo export is published. Any other dump (e.g. the
+# local working copy in /db/) may hold real accounts and password hashes.
+*.sql
+*.sql.gz
+*.sql.zip
+!/database/customcart.sql
+/db/
+
+#-------------------------
+# Temporary Files
+#-------------------------
+/writable/cache/*
+!/writable/cache/index.html
+
+/writable/logs/*
+!/writable/logs/index.html
+
+/writable/session/*
+!/writable/session/index.html
+
+/writable/uploads/*
+!/writable/uploads/index.html
+
+/writable/debugbar/*
+!/writable/debugbar/index.html
+
+/writable/thumb_cache/*
+!/writable/thumb_cache/index.html
+
+# Keep the (otherwise empty) runtime folders in the repository
+!/writable/*/.gitkeep
+
+php_errors.log
+*.log
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+
+#-------------------------
+# User Guide Temp Files
+#-------------------------
+/user_guide_src/build/*
+/user_guide_src/cilexer/build/*
+/user_guide_src/cilexer/dist/*
+/user_guide_src/cilexer/pycilexer.egg-info/*
+
+#-------------------------
+# Test Files
+#-------------------------
+/tests/coverage*
+
+# Don't save phpunit under version control.
+/phpunit
+
+#-------------------------
+# Composer / Node
+#-------------------------
+# Installed with `composer install` and `npm install` (tests/e2e).
+# Anchored to the root: public/assets/vendor/ (Bootstrap, CKEditor) is
+# required by the site and must stay in the repository.
+/vendor/
+node_modules/
+
+# Playwright end-to-end test output
+/tests/e2e/test-results/
+/tests/e2e/playwright-report/
+/tests/e2e/.auth/
+
+#-------------------------
+# IDE / Development Files
+#-------------------------
+
+# Modules Testing
+_modules/*
+
+# phpenv local config
+.php-version
+
+# Jetbrains editors (PHPStorm, etc)
+.idea/
+*.iml
+
+# NetBeans
+/nbproject/
+/build/
+/nbbuild/
+/dist/
+/nbdist/
+/nbactions.xml
+/nb-configuration.xml
+/.nb-gradle/
+
+# Sublime Text
+*.tmlanguage.cache
+*.tmPreferences.cache
+*.stTheme.cache
+*.sublime-workspace
+*.sublime-project
+.phpintel
+/api/
+
+# Visual Studio Code
+.vscode/
+
+# Local AI assistant settings
+.claude/settings.local.json
+
+/results/
+/phpunit.xml

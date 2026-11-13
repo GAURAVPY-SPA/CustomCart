@@ -1,0 +1,32 @@
+# The web root of this application is public/. When Apache serves the project
+# folder itself (e.g. http://localhost/customcart/ under WAMP),
+# every request is handed to public/, so app/, modules/, vendor/, writable/
+# and the .env file can never be downloaded. On a server whose document root
+# already points at public/, this file is not used.
+Options -Indexes
+
+<IfModule mod_rewrite.c>
+	RewriteEngine On
+
+	# One address per page: a URL the browser asked for with index.php
+	# (/index.php, /index.php/products, /products/index.php) is sent with a
+	# 301 to the clean URL (query string kept). THE_REQUEST is the browser's
+	# own request line, so the internal hand-offs (public/$1, index.php/$1)
+	# never match and cannot loop. URLs with /public/ are redirected by
+	# public/.htaccess (Apache uses that file for them, not this one).
+	RewriteCond %{THE_REQUEST} \s([^?\s]*?)/index\.php(?:/([^?\s]*))?[?\s] [NC]
+	RewriteRule ^ %1/%2 [R=301,L,NE]
+
+	# Drop a trailing slash here (e.g. /sitepanel/ -> /sitepanel). Left to
+	# public/.htaccess, the redirect is built after the hand-off below and
+	# points at /public/sitepanel.
+	RewriteCond %{REQUEST_FILENAME} !-d
+	RewriteCond %{REQUEST_URI} (.+)/$
+	RewriteRule ^ %1 [L,R=301]
+
+	RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>
+
+<IfModule !mod_rewrite.c>
+	Require all denied
+</IfModule>

@@ -1,0 +1,28 @@
+# Uploaded files: never served, listed or executed directly by the web server.
+# Images and documents are delivered by the application (GET /uploads/<folder>/<file>,
+# App\Controllers\Uploads). This only matters if this directory ever ends up
+# inside a web root (e.g. the project folder served under WAMP); normally it
+# sits next to public/ and is not reachable.
+Options -Indexes -ExecCGI
+
+<IfModule mod_authz_core.c>
+	# ImageUpload / DocumentUpload validate the file type and content before
+	# saving. Allow only those supported files to be read; keep others blocked.
+	<FilesMatch "\.(?i:jpg|jpeg|png|gif|webp|pdf|doc|docx)$">
+		Require all granted
+	</FilesMatch>
+	<FilesMatch "^(?!.*\.(?i:jpg|jpeg|png|gif|webp|pdf|doc|docx)$).*$">
+		Require all denied
+	</FilesMatch>
+</IfModule>
+<IfModule !mod_authz_core.c>
+	Order deny,allow
+	Deny from all
+	<FilesMatch "\.(?i:jpg|jpeg|png|gif|webp|pdf|doc|docx)$">
+		Allow from all
+	</FilesMatch>
+</IfModule>
+
+<IfModule mod_php.c>
+	php_flag engine off
+</IfModule>
