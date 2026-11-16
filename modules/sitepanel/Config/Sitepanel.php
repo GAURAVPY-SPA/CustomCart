@@ -60,6 +60,29 @@ class Sitepanel extends BaseConfig
 
     /*
      * --------------------------------------------------------------------
+     * Admin password reset (login page > "Forgot password?")
+     * --------------------------------------------------------------------
+     * Read by Modules\Sitepanel\Controllers\ForgotPassword.
+     */
+
+    /**
+     * Lifetime of an emailed reset link, in minutes (each link works once).
+     */
+    public int $passwordResetMinutes = 30;
+
+    /**
+     * Most reset emails sent to one administrator per hour; further requests
+     * are refused with a "please wait" message and send nothing.
+     */
+    public int $passwordResetEmailsPerHour = 3;
+
+    /**
+     * Most reset requests one browser session can make per hour.
+     */
+    public int $passwordResetRequestsPerHour = 5;
+
+    /*
+     * --------------------------------------------------------------------
      * Banners (CodeIgniter 3: modules/sitepanel/config/banners.php)
      * --------------------------------------------------------------------
      */

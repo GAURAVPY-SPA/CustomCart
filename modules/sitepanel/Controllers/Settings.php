@@ -6,12 +6,21 @@ use App\Controllers\AdminController;
 use App\Libraries\FormValidation;
 use App\Models\SettingsModel;
 use Modules\Sitepanel\Libraries\AdminAccess;
+use Modules\Sitepanel\Models\AdminModel;
+use Modules\Sitepanel\Models\AdminPasswordResetModel;
+use Modules\Sitepanel\Models\SubadminModel;
 
 /**
  * Sitepanel > Admin Settings: website identity, contact information (incl.
  * social links, analytics/web code, map code, WhatsApp), online store
  * amounts (shipping charge, free delivery threshold, VAT, low-stock threshold), timezone and
  * maintenance mode (tbl_site_settings).
+ *
+ * Also the signed-in administrator's own email address (Admin account panel).
+ * It is not a site setting: it is saved in that administrator's
+ * tbl_admin.admin_email, the one address "Forgot password?" sends reset links
+ * to. Changing it needs the current password, and ends the reset links
+ * already sent to the old address.
  *
  * Settings that are no longer on this page (logo, favicon, social image,
  * footer, SEO) keep their stored values: a save only writes the keys below.
@@ -76,6 +85,7 @@ class Settings extends AdminController
             'heading_title' => 'Admin Settings',
             'breadcrumbs'   => ['Admin Settings' => null],
             'settings'      => $settings,
+            'admin_email'   => (string) $this->admin['admin_email'],
             'errors'        => $errors,
             'can_edit'      => $this->editPrvg,
             'timezones'     => timezone_identifiers_list(),
@@ -90,6 +100,16 @@ class Settings extends AdminController
     protected function save(): array
     {
         $v = new FormValidation($this->request, $this);
+
+        // Admin account: the signed-in administrator's tbl_admin.admin_email (unique across administrators).
+        $admin_id = (int) $this->admin['admin_id'];
+        $v->set_rules(
+            'admin_email',
+            'Admin email',
+            ['trim', 'required', 'max_length[191]', 'valid_email',
+                ['unique_email', static fn ($value) => (new SubadminModel())->is_taken('admin_email', trim((string) $value), $admin_id) === false]],
+            ['unique_email' => 'The %s is already used by another Sitepanel account.'],
+        );
 
         // Website identity
         $v->set_rules('site_name', 'Site name', 'trim|required|max_length[150]');
@@ -174,6 +194,24 @@ class Settings extends AdminController
             return array_values($v->error_array());
         }
 
+        // A new admin email receives password reset links: confirm it with the current password.
+        $admin_email   = trim((string) $this->request->getPost('admin_email'));
+        $email_changed = $admin_email !== (string) $this->admin['admin_email'];
+
+        if ($email_changed) {
+            $password = (string) $this->request->getPost('current_password');
+            if ($password === '') {
+                return ['Enter your current password to change the admin email.'];
+            }
+            $valid = $this->admin_auth->check_password($admin_id, $password);
+            if ($valid === null) {
+                return ['Your password could not be checked. Please try again.'];
+            }
+            if (! $valid) {
+                return ['The current password is incorrect. The admin email was not changed.'];
+            }
+        }
+
         // Raw input is stored; every output escapes it.
         $values = [];
 
@@ -194,6 +232,14 @@ class Settings extends AdminController
         }
 
         $this->site_settings->refresh();
+
+        if ($email_changed) {
+            if (! (new AdminModel())->update_email($admin_id, $admin_email)) {
+                return ['The other settings were saved, but the admin email could not be changed. Please try again.'];
+            }
+            // Reset links already emailed to the old address stop working.
+            (new AdminPasswordResetModel())->expire_unused($admin_id);
+        }
 
         return [];
     }

@@ -1,8 +1,9 @@
 <?php
 /**
  * Admin Settings form (the reference's dashboard/setting_edit_view).
- * $settings = stored values; on a failed save the submitted values are shown
- * again via set_value() (which escapes output).
+ * $settings = stored values; $admin_email = the signed-in admin's
+ * tbl_admin.admin_email. On a failed save the submitted values are shown
+ * again via set_value() (which escapes output); the password never is.
  */
 echo sp_view('includes/header');
 $field = function ($key) use ($settings) {
@@ -26,6 +27,23 @@ $field = function ($key) use ($settings) {
 
 <?php echo form_open('sitepanel/settings', array('novalidate' => 'novalidate')); ?>
 <fieldset<?php echo $can_edit ? '' : ' disabled'; ?>>
+
+	<section class="sp-panel mb-4" aria-labelledby="set-admin">
+		<header class="sp-panel-head"><h2 class="sp-panel-title" id="set-admin">Admin account</h2></header>
+		<div class="row g-3">
+			<div class="col-12 col-lg-6">
+				<label class="form-label" for="admin_email">Admin email <span class="text-danger">*</span></label>
+				<input class="form-control" type="email" id="admin_email" name="admin_email" maxlength="191" required autocomplete="off" value="<?php echo set_value('admin_email', $admin_email); ?>">
+				<div class="form-text">Your Sitepanel account's email address. Password reset links from “Forgot password?” on the login page are sent to it.</div>
+			</div>
+			<div class="col-12 col-lg-6">
+				<label class="form-label" for="current_password">Current password</label>
+				<?php /* autocomplete="new-password": stops browsers filling a saved login into this form. */ ?>
+				<input class="form-control" type="password" id="current_password" name="current_password" maxlength="255" autocomplete="new-password">
+				<div class="form-text">Needed only when you change the admin email.</div>
+			</div>
+		</div>
+	</section>
 
 	<section class="sp-panel mb-4" aria-labelledby="set-identity">
 		<header class="sp-panel-head"><h2 class="sp-panel-title" id="set-identity">Website identity</h2></header>

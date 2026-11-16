@@ -10,7 +10,7 @@
  * passed the default $id = 0), and accepts GET and POST like before —
  * state-changing actions refuse anything but POST themselves.
  *
- * Every route except sign-in/sign-out runs the sitepanelauth filter (signed-in
+ * Every route except sign-in/sign-out and the forgotten-password pages runs the sitepanelauth filter (signed-in
  * active administrator); AdminController checks the section permissions.
  *
  * @var CodeIgniter\Router\RouteCollection $routes
@@ -20,6 +20,10 @@ $routes->group('sitepanel', ['namespace' => 'Modules\Sitepanel\Controllers'], st
     $routes->get('/', 'Sitepanel::index');
     $routes->match(['GET', 'POST'], 'login', 'Sitepanel::login');
     $routes->match(['GET', 'POST'], 'logout', 'Sitepanel::logout');
+
+    // Public: forgotten password (emailed one-time reset link).
+    $routes->match(['GET', 'POST'], 'forgot_password', 'ForgotPassword::index');
+    $routes->match(['GET', 'POST'], 'reset_password', 'ForgotPassword::reset');
 
     // URL segment => [controller class, [action => takes an id]]
     $sections = [

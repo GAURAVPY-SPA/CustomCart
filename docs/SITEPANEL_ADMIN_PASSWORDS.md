@@ -76,6 +76,54 @@ Signing in isn't affected. An existing password keeps working even if it
 doesn't meet rules that were made stricter later; the new rules apply the
 next time that password is changed.
 
+## Forgotten password: "Forgot password?" on the login page
+
+The login page links to **Forgot password?** (`/sitepanel/forgot_password`).
+
+1. The administrator enters their account's email address (`tbl_admin.admin_email`).
+   This address is always read from `tbl_admin`; no copy of it is kept anywhere else.
+   - **Your own email:** change it in **Sitepanel > Admin Settings > Admin account**. A change needs your
+     current password, and any reset links already emailed to the old address stop working.
+   - **A sub-admin's email:** change it in **Manage Subadmins**.
+2. If it belongs to an **active** account, a reset link is emailed to it and the page
+   confirms it was sent. Otherwise no link is created and no email is sent, and the
+   page says why:
+   - The address isn't registered: "This email address is not registered with any Sitepanel account."
+   - The account is inactive: the page asks the user to contact a super administrator.
+   - Too many links were sent this hour: the page asks the user to wait.
+   - The email couldn't be sent: the page asks the user to try again later or contact the site administrator.
+
+   Because the page says whether an address is registered, the per-session request
+   limit is the only thing slowing down someone testing many addresses.
+3. The link opens `/sitepanel/reset_password`, where the new password is typed twice.
+   It must meet the [password rules](#password-rules). Saving it also lifts a
+   sign-in lockout.
+
+How the links are protected:
+
+| | |
+|---|---|
+| Token | 32 random bytes from `random_bytes()` (64 hex characters) |
+| Stored | Only its SHA-256, in `tbl_admin_password_resets.token_hash` |
+| Lifetime | `passwordResetMinutes` (default 30) |
+| Single use | `used_at` is set in the same transaction as the password change |
+| Newer link | Requesting a new link ends the previous unused ones |
+| Address bar | After the link is opened, the token is removed from the URL and kept only as its hash in the session |
+| Limits | `passwordResetEmailsPerHour` (default 3) emails per account; `passwordResetRequestsPerHour` (default 5) requests per browser session |
+
+These settings are in `modules/sitepanel/Config/Sitepanel.php` and can also be set in `.env`, e.g.
+`sitepanel.passwordResetMinutes = 60`.
+
+The email is sent through the site's mail transport (`App\Libraries\Mailer`, `.env` `mail.*`)
+from **Admin Settings > contact email**. If that address is empty, no email is sent;
+the reason is logged, but the token never is.
+
+The table is created by `php spark migrate`
+(`2026-11-16-100000_CreateAdminPasswordResetsTable`), or manually with
+`docs/admin_password_resets.sql`.
+
+If email isn't working, use one of the options below.
+
 ## Forgotten password, option A: command line (recommended)
 
 Run this in the project folder (`D:\wamp64\www\customcart`), on the server

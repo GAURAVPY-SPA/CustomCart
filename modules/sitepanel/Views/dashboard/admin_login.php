@@ -46,6 +46,8 @@
 			<button class="btn sp-btn-primary w-100" type="submit">Sign in</button>
 		<?php echo form_close(); ?>
 
+		<p class="sp-login-back mt-3"><a href="<?php echo site_url('sitepanel/forgot_password'); ?>">Forgot password?</a></p>
+
 		<p class="sp-login-back"><a href="<?php echo website_url(); ?>">&larr; Back to website</a></p>
 	</div>
 </main>

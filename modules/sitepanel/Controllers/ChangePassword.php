@@ -12,7 +12,8 @@ use Modules\Sitepanel\Models\AdminModel;
  * password. The current password is verified first (AdminAuth::check_password());
  * the new one is stored as its password_hash() value in tbl_admin.password_hash
  * (any legacy plain-text admin_password is cleared). A forgotten password is
- * reset with php spark admin:reset-password (docs/SITEPANEL_ADMIN_PASSWORDS.md).
+ * reset from the login page's "Forgot password?" link (ForgotPassword) or with
+ * php spark admin:reset-password (docs/SITEPANEL_ADMIN_PASSWORDS.md).
  *
  * Open to every administrator (AdminAccess::ALWAYS_ALLOWED).
  *

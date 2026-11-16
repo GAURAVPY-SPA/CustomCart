@@ -125,6 +125,40 @@ class AdminModel extends BaseModel
     }
 
     /**
+     * Save an administrator's email address (tbl_admin.admin_email, unique):
+     * the address shown in the Sitepanel and used by "Forgot password?".
+     * FALSE when it could not be saved (e.g. another account took it meanwhile).
+     */
+    public function update_email(int $admin_id, string $email): bool
+    {
+        return $this->safe_update(self::TABLE, [
+            'admin_email' => $email,
+            'updated_at'  => date('Y-m-d H:i:s'),
+        ], ['admin_id' => $admin_id]);
+    }
+
+    /**
+     * Administrator by email address (any status; status 1 = active), without
+     * the password, for the login page's "Forgot password?" (admin_email is unique).
+     *
+     * @return array|false|null
+     */
+    public function find_by_email(string $email)
+    {
+        if (! $this->db_ready()) {
+            return false;
+        }
+
+        $query = $this->table(self::TABLE)
+            ->select('admin_id, admin_name, admin_username, admin_email, status')
+            ->where('admin_email', $email)
+            ->limit(1)
+            ->get();
+
+        return $this->single_row($query);
+    }
+
+    /**
      * Administrator by username or email (any status), without the password,
      * for php spark admin:reset-password.
      *
