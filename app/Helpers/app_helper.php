@@ -65,36 +65,6 @@ if (! function_exists('theme_url')) {
     }
 }
 
-if (! function_exists('resource_url')) {
-    /**
-     * Base URL for shared designer scripts and resources.
-     */
-    function resource_url(): string
-    {
-        return base_url('assets/designer/resources/');
-    }
-}
-
-if (! function_exists('theme_image_file')) {
-    /**
-     * A plain file name of an existing image in the designer theme folder
-     * (assets/designer/themes/default/images/), or '' — no paths, so stored
-     * values can never point outside that folder.
-     *
-     * @param string|null $name       e.g. "wf-ingest.svg"
-     * @param string      $extensions Allowed extensions (regex alternation)
-     */
-    function theme_image_file($name, $extensions = 'svg|png|jpe?g|webp|gif'): string
-    {
-        $name = (string) $name;
-        if (preg_match('/^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}\.(?:' . $extensions . ')$/iD', $name) !== 1 || str_contains($name, '..')) {
-            return '';
-        }
-
-        return is_file(FCPATH . 'assets/designer/themes/default/images/' . $name) ? $name : '';
-    }
-}
-
 if (! function_exists('map_embed_src')) {
     /**
      * The Google Maps embed URL in a stored map code (an <iframe ...> snippet
@@ -144,6 +114,19 @@ if (! function_exists('phone_digits')) {
         $digits = preg_replace('/\D+/', '', $number);
 
         return ($keep_plus && $digits !== '' && str_starts_with($number, '+')) ? '+' . $digits : $digits;
+    }
+}
+
+if (! function_exists('split_name')) {
+    /**
+     * A full name as [first, last]: the first word and the rest ('' when
+     * there is only one word), e.g. "Jane van Doe" gives ['Jane', 'van Doe'].
+     *
+     * @return array{0: string, 1: string}
+     */
+    function split_name(string $full): array
+    {
+        return array_pad(preg_split('/\s+/u', trim($full), 2), 2, '');
     }
 }
 
@@ -444,18 +427,6 @@ if (! function_exists('account_nav')) {
         }
 
         return ['state' => $state, 'links' => $links];
-    }
-}
-
-if (! function_exists('account_can')) {
-    /**
-     * Whether this visitor may use a permission of CustomerAuth::PERMISSIONS
-     * ('store_order', 'event_register', ...), to hide what they may not use.
-     * The controllers check the same rule on the server.
-     */
-    function account_can(string $permission): bool
-    {
-        return (new \Modules\Users\Libraries\CustomerAuth())->can($permission);
     }
 }
 

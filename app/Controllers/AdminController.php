@@ -86,6 +86,13 @@ abstract class AdminController extends BaseController
      */
     protected string $menu_highlight = '';
 
+    /**
+     * can_open_section() results for this request: section => bool.
+     *
+     * @var array<string, bool>
+     */
+    private array $open_sections = [];
+
     protected Session $session;
     protected AdminAuth $admin_auth;
     protected AdminAccess $admin_access;
@@ -316,7 +323,7 @@ abstract class AdminController extends BaseController
      * (SEO metadata, categories still in use). Validates the request (POST,
      * Delete privilege, selected ids on this page), runs $before_delete($rows),
      * which returns an error message to stop or NULL to continue, then deletes
-     * through process_bulk_action(). Only the "delete" action is accepted.
+     * the rows. Only the "delete" action is accepted.
      *
      * @param object   $model         Needs $get_method(ids) and bulk_delete(ids)
      * @param array    $query         List filters to return to
@@ -324,22 +331,7 @@ abstract class AdminController extends BaseController
      */
     protected function bulk_delete_checked(object $model, string $get_method, string $item, array $query, callable $before_delete, ?string $image_column = null, ?string $image_folder = null): never
     {
-        $this->require_post();
-        if ($this->request->getPost('bulk_action') !== 'delete') {
-            $this->session->setFlashdata('sitepanel_error', 'Choose a valid bulk action.');
-            $this->back($query);
-        }
-        $this->require_privilege(AdminAccess::PRIV_DELETE);
-
-        $ids = $this->selected_ids();
-        if ($ids === false) {
-            $this->session->setFlashdata('sitepanel_error', 'Select one or more valid records on this page.');
-            $this->back($query);
-        }
-        $rows = $model->{$get_method}($ids);
-        if (! $this->selected_rows_match($rows, $ids)) {
-            $this->back($query);
-        }
+        [$action, $ids, $rows] = $this->checked_bulk_rows($model, $get_method, $query, ['delete']);
 
         $error = $before_delete($rows);
         if ($error !== null) {
@@ -347,7 +339,7 @@ abstract class AdminController extends BaseController
             $this->back($query);
         }
 
-        $this->process_bulk_action($model, $get_method, $item, $query, $image_column, $image_folder);
+        $this->apply_bulk_action($model, $action, $ids, $rows, $item, $query, $image_column, $image_folder);
     }
 
     /**
@@ -355,9 +347,29 @@ abstract class AdminController extends BaseController
      */
     protected function process_bulk_action(object $model, string $get_method, string $item, array $query = [], ?string $image_column = null, ?string $image_folder = null): never
     {
+        [$action, $ids, $rows] = $this->checked_bulk_rows($model, $get_method, $query, ['activate', 'deactivate', 'delete']);
+
+        $this->apply_bulk_action($model, $action, $ids, $rows, $item, $query, $image_column, $image_folder);
+    }
+
+    /**
+     * Checks shared by the bulk actions, in this order: POST only, a
+     * bulk_action from $allowed_actions, the privilege for that action,
+     * valid ids on this page, and every id still a row of this module.
+     * Any failure sets a flash message and goes back to the list.
+     *
+     * @param object       $model           Needs $get_method(ids)
+     * @param list<string> $allowed_actions Accepted bulk_action values
+     * @param array        $query           List filters to return to
+     *
+     * @return array{0: string, 1: list<int>, 2: array} [action, ids, rows]
+     */
+    protected function checked_bulk_rows(object $model, string $get_method, array $query, array $allowed_actions): array
+    {
         $this->require_post();
-        $action = (string) $this->request->getPost('bulk_action');
-        if (! in_array($action, ['activate', 'deactivate', 'delete'], true)) {
+        $action = $this->request->getPost('bulk_action');
+        $action = is_string($action) ? $action : '';
+        if (! in_array($action, $allowed_actions, true)) {
             $this->session->setFlashdata('sitepanel_error', 'Choose a valid bulk action.');
             $this->back($query);
         }
@@ -379,6 +391,19 @@ abstract class AdminController extends BaseController
             $this->back($query);
         }
 
+        return [$action, $ids, $rows];
+    }
+
+    /**
+     * Run a validated bulk action (see checked_bulk_rows()) and go back to
+     * the list with the result message. Delete also removes each row's
+     * uploaded image when $image_column is given.
+     *
+     * @param object $model  Needs bulk_delete(ids) and bulk_update_status(ids, status)
+     * @param string $action 'activate', 'deactivate' or 'delete'
+     */
+    protected function apply_bulk_action(object $model, string $action, array $ids, array $rows, string $item, array $query, ?string $image_column = null, ?string $image_folder = null): never
+    {
         if ($action === 'delete') {
             $success = $model->bulk_delete($ids);
             if ($success && $image_column !== null) {
@@ -435,6 +460,103 @@ abstract class AdminController extends BaseController
         $value = trim((string) $this->request->getPost($field));
 
         return $value === '' ? null : $value;
+    }
+
+    /**
+     * A status filter value: '1' or '0', anything else ''.
+     */
+    protected function status_param(string $value): string
+    {
+        return in_array($value, ['1', '0'], true) ? $value : '';
+    }
+
+    /**
+     * Search keyword, trimmed and cut to $max characters. Reads ?keyword=
+     * when no value is given (pass the POSTed keyword explicitly).
+     */
+    protected function keyword_param(?string $value = null, int $max = 80): string
+    {
+        return mb_substr(trim((string) ($value ?? $this->request->getGet('keyword'))), 0, $max);
+    }
+
+    /**
+     * List filters POSTed with an action (keyword, status_filter), to return
+     * to the same filtered list. Empty filters are dropped; a status of '0'
+     * is kept. Controllers with more filters override this.
+     */
+    protected function list_query(): array
+    {
+        $keyword = mb_substr(trim((string) $this->request->getPost('keyword')), 0, 80);
+        $status  = $this->status_param((string) $this->request->getPost('status_filter'));
+
+        return array_filter(['keyword' => $keyword, 'status' => $status], static fn ($v) => $v !== '');
+    }
+
+    /**
+     * POST ord[id] => 0..9999: save the display order of the rows on one
+     * list page (Edit privilege), then go back to the list (list_query()).
+     * At most static::PAGESIZE rows; every id must still be a row of this
+     * module.
+     *
+     * @param object $model      Needs $get_method(ids) and update_sort_orders(orders)
+     * @param string $get_method Model method loading rows by ids, e.g. 'get_faqs_by_ids'
+     * @param string $noun       For the error message, e.g. 'FAQ', 'photo'
+     */
+    protected function save_display_order(object $model, string $get_method, string $noun): never
+    {
+        $this->require_post();
+        $this->require_privilege(AdminAccess::PRIV_EDIT);
+        $query = $this->list_query();
+
+        $posted = $this->request->getPost('ord');
+        $orders = [];
+        $valid  = is_array($posted) && $posted && count($posted) <= static::PAGESIZE;
+
+        if ($valid) {
+            foreach ($posted as $id => $order) {
+                $order = is_string($order) ? trim($order) : '';
+                if (! preg_match('/^[1-9][0-9]*$/D', (string) $id) || ! preg_match('/^[0-9]{1,4}$/D', $order)) {
+                    $valid = false;
+                    break;
+                }
+                $orders[(int) $id] = (int) $order;
+            }
+        }
+        if (! $valid) {
+            $this->session->setFlashdata('sitepanel_error', 'Enter a display order from 0 to 9999 for each ' . $noun . '.');
+            $this->back($query);
+        }
+
+        $ids = array_keys($orders);
+        if (! $this->selected_rows_match($model->{$get_method}($ids), $ids)) {
+            $this->back($query);
+        }
+
+        if ($model->update_sort_orders($orders)) {
+            $this->session->setFlashdata('sitepanel_success', 'Display order updated.');
+        } else {
+            $this->session->setFlashdata('sitepanel_error', 'Display order could not be updated. Please try again.');
+        }
+        $this->back($query);
+    }
+
+    /**
+     * Whether the admin may open another sitepanel section (View privilege
+     * there), e.g. to show links to orders. Super admins always may; a
+     * section whose permissions can't be read counts as closed. Cached for
+     * the request.
+     *
+     * @param string $section Lower-case sitepanel controller name, e.g. 'orders'
+     */
+    protected function can_open_section(string $section): bool
+    {
+        if (! isset($this->open_sections[$section])) {
+            $codes = $this->admin_access->permissions_for($this->admin, $section);
+
+            $this->open_sections[$section] = is_array($codes) && in_array(AdminAccess::PRIV_VIEW, $codes, true);
+        }
+
+        return $this->open_sections[$section];
     }
 
     /**

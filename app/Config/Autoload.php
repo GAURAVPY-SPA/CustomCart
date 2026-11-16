@@ -117,5 +117,5 @@ class Autoload extends AutoloadConfig
     // character_limiter(), set_checkbox(), set_radio() and form_error() are
     // defined first, so the framework helpers keep them. Module helpers
     // (blog, sitepanel, admin) are loaded by the controllers that use them.
-    public $helpers = ['url', 'html', 'app', 'form', 'text', 'utils'];
+    public $helpers = ['url', 'html', 'app', 'form', 'text'];
 }

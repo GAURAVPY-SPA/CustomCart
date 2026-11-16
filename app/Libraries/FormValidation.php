@@ -34,6 +34,18 @@ use CodeIgniter\Validation\ValidationInterface;
 class FormValidation
 {
     /**
+     * Rule for a person's name: a letter first, then letters, spaces and . ' -
+     * e.g. 'required|max_length[60]|' . FormValidation::PERSON_NAME
+     */
+    public const PERSON_NAME = 'regex_match[/^[\p{L}][\p{L} .\'\-]*$/u]';
+
+    /**
+     * The website forms' regex_match message for PERSON_NAME on the visitor's
+     * own name (the sitepanel and account forms word theirs differently).
+     */
+    public const PERSON_NAME_MESSAGE = 'Your name may contain only letters, spaces and . \' -';
+
+    /**
      * field => ['label' => string, 'rules' => list<array|string>, 'errors' => array]
      */
     protected array $fields = [];

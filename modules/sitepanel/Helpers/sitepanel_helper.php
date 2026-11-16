@@ -190,3 +190,17 @@ if (! function_exists('sp_page_slug')) {
         return sp_slug(str_replace(["'", '’', '‘', '`'], '', (string) $name), $max_length);
     }
 }
+
+if (! function_exists('sp_valid_date')) {
+    /**
+     * Whether $value is a real calendar date written exactly as Y-m-d,
+     * e.g. '2024-02-29' yes, '2023-02-29', '2024-2-9' and '' no. The value is
+     * not trimmed.
+     */
+    function sp_valid_date(string $value): bool
+    {
+        $date = DateTime::createFromFormat('!Y-m-d', $value);
+
+        return $date !== false && $date->format('Y-m-d') === $value;
+    }
+}

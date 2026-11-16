@@ -278,7 +278,7 @@ customcart/
 │   ├── Config/             Central configuration (App, Database, Routes, Shop, Mail, Uploads, ...)
 │   ├── Controllers/        BaseController, PublicController, AdminController, Uploads
 │   ├── Database/           Migrations/ and Seeds/
-│   ├── Helpers/            app, utils and other helpers
+│   ├── Helpers/            app and other helpers
 │   ├── Libraries/          SiteSettings, PageMeta, ImageUpload, Mailer, HtmlSanitizer, ThumbnailCache, ...
 │   ├── Models/             BaseModel and shared models
 │   └── Views/              Site layout (header/footer), error pages

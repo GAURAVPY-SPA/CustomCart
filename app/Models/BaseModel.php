@@ -231,6 +231,31 @@ class BaseModel
     }
 
     /**
+     * Save display orders in one transaction: sort_order of each row of
+     * $table whose $key is an array key of $orders. FALSE when $orders is
+     * empty or the database fails (nothing is changed then).
+     *
+     * @param array<int, int> $orders id => display order
+     */
+    protected function update_sort_orders_in(string $table, string $key, array $orders): bool
+    {
+        if (! $orders || ! $this->db_ready()) {
+            return false;
+        }
+
+        return $this->write_failed(function () use ($table, $key, $orders) {
+            $this->db->transStart();
+
+            foreach ($orders as $id => $order) {
+                $this->table($table)->where($key, (int) $id)->update(['sort_order' => (int) $order]);
+            }
+            $this->db->transComplete();
+
+            return $this->db->transStatus();
+        }) === false;
+    }
+
+    /**
      * One page of rows from $table plus the total (stored in $this->total_rec_found,
      * as the reference project's list methods do).
      *

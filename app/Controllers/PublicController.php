@@ -109,4 +109,28 @@ abstract class PublicController extends BaseController
             ],
         ]);
     }
+
+    /**
+     * Honeypot: the hidden fax_number field of the website forms, which
+     * people never fill in. TRUE means a bot sent the form.
+     */
+    protected function honeypot_filled(): bool
+    {
+        return trim((string) $this->request->getPost('fax_number')) !== '';
+    }
+
+    /**
+     * Whether this visitor's IP already sent $limit or more records in the
+     * last hour, counted by $model->count_recent_from_ip(ip, 60).
+     *
+     * @param object $model Needs count_recent_from_ip(string $ip, int $minutes): false|int
+     *
+     * @return bool|null NULL when the count could not be read (database error)
+     */
+    protected function over_hourly_limit(object $model, int $limit): ?bool
+    {
+        $recent = $model->count_recent_from_ip($this->request->getIPAddress(), 60);
+
+        return $recent === false ? null : $recent >= $limit;
+    }
 }

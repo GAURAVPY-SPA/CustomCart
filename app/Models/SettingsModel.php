@@ -37,23 +37,21 @@ class SettingsModel extends BaseModel
 
         $now = date('Y-m-d H:i:s');
 
-        $this->db->transStart();
+        // write_failed() logs a failed transaction, and also catches the
+        // exception a failed query throws while DBDebug is on.
+        return ! $this->write_failed(function () use ($values, $admin_id, $now) {
+            $this->db->transStart();
 
-        foreach ($values as $key => $value) {
-            $this->db->query(
-                'INSERT INTO ' . self::TABLE . ' (setting_key, setting_value, updated_at, updated_by) VALUES (?, ?, ?, ?)
+            foreach ($values as $key => $value) {
+                $this->db->query(
+                    'INSERT INTO ' . self::TABLE . ' (setting_key, setting_value, updated_at, updated_by) VALUES (?, ?, ?, ?)
 				 ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), updated_at = VALUES(updated_at), updated_by = VALUES(updated_by)',
-                [$key, (string) $value, $now, (int) $admin_id],
-            );
-        }
-        $this->db->transComplete();
+                    [$key, (string) $value, $now, (int) $admin_id],
+                );
+            }
+            $this->db->transComplete();
 
-        if ($this->db->transStatus() === false) {
-            $this->query_failed(false);
-
-            return false;
-        }
-
-        return true;
+            return $this->db->transStatus();
+        });
     }
 }

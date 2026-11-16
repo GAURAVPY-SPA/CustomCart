@@ -67,7 +67,7 @@ app/
 │   ├── Migrations/               2026-10-30-140000_CreateFaqTable.php ... 2026-10-31-110000_AddCmsPageLayout.php
 │   └── Seeds/                    DatabaseSeeder, OtherManagementSectionsSeeder, CountrySeeder, PageMetaTagsSeeder
 ├── Exceptions/HaltException.php  ends a request with a ready response (maintenance page)
-├── Helpers/                      app_helper, utils_helper, blog_helper
+├── Helpers/                      app_helper, blog_helper
 ├── Language/en/Validation.php    validation messages
 ├── Libraries/                    FormValidation, HtmlSanitizer, ImageUpload, Mailer, PageMeta, SiteSettings
 ├── Models/                       BaseModel, SettingsModel, UtilsModel
@@ -165,7 +165,7 @@ public/index.php
 
 | Base class | File | Used by | Provides |
 |---|---|---|---|
-| `BaseController` | `app/Controllers/BaseController.php` | everything | `$view_data` (site_name, site_title, site_logo, site_favicon, copyright, footer_description), `$site_settings`, `boot()` and `init()` hooks, `trim_post()` |
+| `BaseController` | `app/Controllers/BaseController.php` | everything | `$view_data` (site_name, site_title, site_logo, site_favicon, copyright), `$site_settings`, `boot()` and `init()` hooks, `trim_post()` |
 | `PublicController` | `app/Controllers/PublicController.php` | website controllers | maintenance mode (503 page), `render($view, $data)`, `not_found_page()` (throws 404), `render_not_found()` |
 | `AdminController` | `app/Controllers/AdminController.php` | Sitepanel sections | sign-in + permission check, `render()` (sitepanel views + privileges), `PAGESIZE` (20), `current_page()`, `record_or_back()`, `require_post()`, `require_privilege()`, `update_status()`, `delete_record()`, `process_bulk_action()`, `bulk_delete_checked()`, `back()` |
 
@@ -291,8 +291,7 @@ not changed by any code or command in this project.
 
 | Helper | Functions |
 |---|---|
-| `app_helper` (autoloaded) | `asset_url()`, `website_url()`, `theme_url()`, `resource_url()`, `seo_head()`, `html_escape()`, `redirect_now()`, `form_error()`, `set_checkbox()`, `set_radio()`, `site_menu_url()`, `site_menu_links()`, `phone_digits()`, `map_embed_src()` |
-| `utils_helper` (autoloaded) | date and array utilities from the reference project |
+| `app_helper` (autoloaded) | `asset_url()`, `website_url()`, `theme_url()`, `seo_head()`, `html_escape()`, `redirect_now()`, `form_error()`, `set_checkbox()`, `set_radio()`, `site_menu_url()`, `site_menu_links()`, `phone_digits()`, `map_embed_src()` |
 | `blog_helper` | `blog_date()`, `blog_read_minutes()`, `blog_tags()` |
 | `sitepanel_helper`, `admin_helper` (Sitepanel controllers) | see §4.2 |
 
@@ -350,7 +349,7 @@ Status columns use `'1'` = active, `'0'` = inactive (`wl_cms_pages` also `'2'` =
 | Path | URL | Helper |
 |---|---|---|
 | `public/assets/designer/themes/default/` (`css/style.css`, `images/`) | `assets/designer/themes/default/` | `theme_url()` |
-| `public/assets/designer/resources/` (`Scripts/`) | `assets/designer/resources/` | `resource_url()` |
+| `public/assets/designer/resources/` (`Scripts/`) | `assets/designer/resources/` | `asset_url()` |
 | `public/assets/sitepanel/` (`css/sitepanel.css`, `js/`) | `assets/sitepanel/` | `asset_url()` |
 | `public/assets/vendor/` (`bootstrap/`, `ckeditor4/`) | `assets/vendor/` | `asset_url()` |
 | `public/assets/blog/js/` | `assets/blog/js/` | `asset_url()` |

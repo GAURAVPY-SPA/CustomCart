@@ -61,12 +61,11 @@ abstract class BaseController extends Controller
             date_default_timezone_set($timezone);
         }
 
-        $this->view_data['site_name']          = $this->site_settings->get('site_name');
-        $this->view_data['site_title']         = $this->site_settings->get('site_title');
-        $this->view_data['site_logo']          = $this->site_settings->logo_path();
-        $this->view_data['site_favicon']       = $this->site_settings->favicon_path();
-        $this->view_data['copyright']          = $this->site_settings->copyright();
-        $this->view_data['footer_description'] = $this->site_settings->get('footer_description');
+        $this->view_data['site_name']    = $this->site_settings->get('site_name');
+        $this->view_data['site_title']   = $this->site_settings->get('site_title');
+        $this->view_data['site_logo']    = $this->site_settings->logo_path();
+        $this->view_data['site_favicon'] = $this->site_settings->favicon_path();
+        $this->view_data['copyright']    = $this->site_settings->copyright();
 
         $this->boot();
         $this->init();

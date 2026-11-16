@@ -18,7 +18,6 @@ use Modules\Users\Models\CustomerModel;
  *   $customer = $auth->current();                     // signed-in customer, or NULL
  *   $customer = $auth->require_login();               // or redirect to login?ref=<this page>
  *   $state    = $auth->nav_state();                   // 'guest' | 'user' (account_nav())
- *   $auth->can('store_order');                        // PERMISSIONS: what this visitor may do
  */
 class CustomerAuth
 {
@@ -54,14 +53,6 @@ class CustomerAuth
             'edit'     => ['label' => 'Edit Profile', 'uri' => 'acc-edit', 'title' => 'Edit Your Account Details', 'icon' => 'person'],
             'logout'   => ['label' => 'Logout', 'uri' => 'logout', 'title' => 'Log Out of Your Account', 'icon' => 'box-arrow-right', 'post' => true],
         ],
-    ];
-
-    /**
-     * What each visitor state (nav_state()) may do (can()): visitors and
-     * customers order from the store (guest checkout).
-     */
-    public const PERMISSIONS = [
-        'store_order' => [self::GUEST, CustomerModel::TYPE_USER],
     ];
 
     /**
@@ -163,14 +154,6 @@ class CustomerAuth
     public function nav_state(): string
     {
         return $this->current_type() ?? self::GUEST;
-    }
-
-    /**
-     * Whether this visitor may use a permission of PERMISSIONS.
-     */
-    public function can(string $permission): bool
-    {
-        return in_array($this->nav_state(), self::PERMISSIONS[$permission] ?? [], true);
     }
 
     /**

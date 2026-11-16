@@ -140,15 +140,4 @@ class DocumentUpload extends ImageUpload
 
         return false;
     }
-
-    /**
-     * "PDF document · 245 KB" (the design's .news-doc-meta).
-     */
-    public static function describe(string $type, int $bytes): string
-    {
-        $kind = ['pdf' => 'PDF document', 'doc' => 'Word document', 'docx' => 'Word document'][$type] ?? 'Document';
-        $size = $bytes >= 1048576 ? round($bytes / 1048576, 1) . ' MB' : max(1, (int) round($bytes / 1024)) . ' KB';
-
-        return $kind . ' · ' . $size;
-    }
 }

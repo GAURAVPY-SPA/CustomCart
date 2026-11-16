@@ -30,8 +30,6 @@ class SiteSettings
 
     protected ?array $values = null;
 
-    protected bool $from_database = false;
-
     /**
      * All rows read from tbl_site_settings (including keys not listed in defaults()).
      */
@@ -124,7 +122,6 @@ class SiteSettings
             $this->model ??= new SettingsModel();
             $stored = $this->model->all();
 
-            $this->from_database = ($stored !== false);
             $this->stored        = $stored ?: [];
             $this->values        = array_merge(
                 self::defaults(),
@@ -175,16 +172,6 @@ class SiteSettings
     public function refresh(): void
     {
         $this->values = null;
-    }
-
-    /**
-     * Whether values were read from the database this request.
-     */
-    public function loaded_from_database(): bool
-    {
-        $this->all();
-
-        return $this->from_database;
     }
 
     /**

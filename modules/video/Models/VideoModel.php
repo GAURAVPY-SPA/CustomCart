@@ -101,20 +101,7 @@ class VideoModel extends BaseModel
      */
     public function update_sort_orders(array $orders): bool
     {
-        if (! $orders || ! $this->db_ready()) {
-            return false;
-        }
-
-        return $this->write_failed(function () use ($orders) {
-            $this->db->transStart();
-
-            foreach ($orders as $id => $order) {
-                $this->table(self::TABLE)->where(self::PRIMARY_KEY, (int) $id)->update(['sort_order' => (int) $order]);
-            }
-            $this->db->transComplete();
-
-            return $this->db->transStatus();
-        }) === false;
+        return $this->update_sort_orders_in(self::TABLE, self::PRIMARY_KEY, $orders);
     }
 
     /**
