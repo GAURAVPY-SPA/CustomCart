@@ -183,7 +183,7 @@ Super admins see every section; sub-admins see only the sections granted to them
 **Alternative — built-in development server** (no Apache needed):
 
 ```bash
-php spark serve --host 127.0.0.1 --port 8080
+php spark serve --host 127.0.0.1 --port 8081
 ```
 
 Then open `http://127.0.0.1:8080/`. In `development` mode the asset URLs follow
