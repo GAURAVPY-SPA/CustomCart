@@ -735,6 +735,9 @@ class Products extends AdminController
      * site root) is used by no other row of wl_meta_tags (categories, pages)
      * and is not reserved. An edited product ($row) may keep its own slug.
      *
+     * Static so ProductsBulk can call it; it is not a URL (routes are
+     * explicit in Config/Routes.php and auto-routing is off).
+     *
      * @param array|null $row The product being edited, NULL for a new one
      *
      * @return false|string '' when the name has no letters or digits, FALSE when it could not be checked

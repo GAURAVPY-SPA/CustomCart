@@ -215,7 +215,6 @@ class Coupons extends AdminController
         return $saved ? [] : ['Coupon could not be saved. Please try again.'];
     }
 
-
     protected static function is_amount(string $value): bool
     {
         return preg_match('/^[0-9]{1,8}(\.[0-9]{1,2})?$/D', $value) === 1;

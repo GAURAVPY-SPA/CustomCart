@@ -36,7 +36,7 @@ class Newsletter extends AdminController
     public const MAIL_FLOW_KEY = 'newsletter_mail_flow';
     public const MAIL_FLOW_TTL = 1800;
 
-    protected string $base          = 'sitepanel/newsletter';
+    protected string $base           = 'sitepanel/newsletter';
     protected string $item           = 'Subscriber';
     protected string $menu_highlight = 'newsletter';
     protected NewsletterModel $newsletter_model;

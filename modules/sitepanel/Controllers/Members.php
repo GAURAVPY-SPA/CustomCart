@@ -165,7 +165,6 @@ class Members extends AdminController
         return null;
     }
 
-
     protected function status_param(string $value): string
     {
         return isset(self::STATUSES[$value]) ? $value : '';

@@ -289,7 +289,6 @@ class Dashboard extends AdminController
         return $this->card($icon, $label, number_format($c[$value]), $meta($c)) + ['url' => site_url('sitepanel/' . $section), 'key' => $section];
     }
 
-
     protected function card(string $icon, string $label, string $value, string $meta, string $tone = 'neutral'): array
     {
         return compact('icon', 'label', 'value', 'meta', 'tone');
