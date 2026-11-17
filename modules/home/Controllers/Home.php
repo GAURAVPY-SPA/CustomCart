@@ -11,6 +11,7 @@ use Modules\Sitepanel\Controllers\HeaderImages;
 use Modules\Sitepanel\Models\FaqModel;
 use Modules\Sitepanel\Models\HeaderImagesModel;
 use Modules\Sitepanel\Models\NewsletterModel;
+use Modules\Team\Models\TeamModel;
 
 /**
  * Homepage (/ and /home; design: html/index.htm). SEO: the wl_meta_tags
@@ -157,11 +158,7 @@ class Home extends PublicController
         $rows = array_slice($home ?: $rows, 0, self::CATEGORY_COUNT);
 
         foreach ($rows as &$row) {
-            $row['image_url'] = upload_image_url('category', $row['category_image'], 600, 600, 'C');
-            if ($row['image_url'] === '') {
-                $first            = $this->products->search_public(['category_id' => (int) $row['category_id']], 'default', 0, 1);
-                $row['image_url'] = product_image_url(is_array($first) && $first ? $first[0]['image'] : null, 600, 600);
-            }
+            $row['image_url'] = category_image_url($row, 600, 600);
         }
 
         return $rows;
@@ -172,10 +169,7 @@ class Home extends PublicController
      */
     protected function flagged(string $flag): array
     {
-        $rows = $this->products->search_public(['flag' => $flag], 'newest', 0, self::PRODUCT_COUNT);
-        if (is_array($rows) && ! $rows) {
-            $rows = $this->products->search_public([], 'newest', 0, self::PRODUCT_COUNT);
-        }
+        $rows = $this->products->get_public_flagged($flag, self::PRODUCT_COUNT);
 
         return is_array($rows) ? $rows : [];
     }
@@ -212,12 +206,8 @@ class Home extends PublicController
      */
     protected function partners(): array
     {
-        $class = '\Modules\Team\Models\TeamModel';
-        if (! class_exists($class)) {
-            return [];
-        }
         $logos = [];
-        foreach ((new $class())->get_active('partner', self::PARTNER_COUNT) ?: [] as $row) {
+        foreach ((new TeamModel())->get_active(TeamModel::TYPE_PARTNER, self::PARTNER_COUNT) ?: [] as $row) {
             $logo = get_image('team', $row['photo'], 360, 200);
             $logo !== '' && $logos[] = ['name' => (string) $row['name'], 'logo' => $logo];
         }

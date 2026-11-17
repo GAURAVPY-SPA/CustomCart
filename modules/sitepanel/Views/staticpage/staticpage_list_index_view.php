@@ -37,11 +37,9 @@ echo sp_view('includes/header');
 	<?php elseif (empty($res)): ?>
 		<p class="sp-empty mb-0"><?php echo $total ? 'No pages on this page of the list.' : ($filtered ? 'No pages match this search.' : 'No static pages yet.'); ?></p>
 	<?php else: ?>
-		<?php /* Bulk Active / Deactive / Delete hidden (rows show View only); restore: use this line instead of FALSE and uncomment the toolbars.
+		<?php /* Bulk Active / Deactive / Delete hidden (rows show View only); restore: use this line instead of FALSE and add the includes/bulk_actions toolbars (top and bottom, as in location/view_country_list.php).
 		$bulk_enabled = $activatePrvg || $deactivatePrvg || $deletePrvg; */ ?>
 		<?php $bulk_enabled = FALSE; ?>
-		<?php /* $bulk = array('key' => 'pages', 'base' => 'sitepanel/staticpages', 'page' => $page, 'noun' => 'pages', 'filters' => array('keyword' => $keyword, 'status_filter' => $status), 'can_activate' => $activatePrvg, 'can_deactivate' => $deactivatePrvg, 'can_delete' => $deletePrvg);
-		echo sp_view('includes/bulk_actions', array('bulk' => $bulk)); */ ?>
 		<div class="sp-table-wrap">
 			<table class="sp-table sp-table--stack">
 				<caption class="visually-hidden">Static pages, by title</caption>
@@ -97,7 +95,6 @@ echo sp_view('includes/header');
 				</tbody>
 			</table>
 		</div>
-		<?php /* echo sp_view('includes/bulk_actions', array('bulk' => array('position' => 'bottom') + $bulk)); */ ?>
 	<?php endif; ?>
 	<?php if ($res): ?>
 	<?php echo sp_view('includes/list_foot', array('foot' => array('total' => $total, 'noun' => $total === 1 ? 'page' : 'pages', 'pagination' => $page_links))); ?>

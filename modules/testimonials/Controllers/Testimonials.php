@@ -81,14 +81,14 @@ class Testimonials extends PublicController
         }
 
         // Honeypot: a hidden field people never fill in.
-        if (trim((string) $this->request->getPost('fax_number')) !== '') {
+        if ($this->honeypot_filled()) {
             redirect_now('testimonials?submitted=1');
         }
 
         $captcha = new Captcha();
         $v       = new FormValidation($this->request, $this);
         $v->set_data($form['values'] + [$captcha->field() => (string) $this->request->getPost($captcha->field())]);
-        $v->set_rules('name', 'Name', "required|max_length[30]|regex_match[/^[\\p{L}][\\p{L} .'\\-]*$/u]", ['regex_match' => 'Your name may contain only letters, spaces and . \' -']);
+        $v->set_rules('name', 'Name', 'required|max_length[30]|' . FormValidation::PERSON_NAME, ['regex_match' => FormValidation::PERSON_NAME_MESSAGE]);
         $v->set_rules('email', 'Email', 'required|max_length[80]|valid_email');
         $v->set_rules('message', 'Comment', 'required|min_length[20]|max_length[2000]', ['min_length' => 'Please write at least 20 characters for your testimonial.']);
         $captcha->add_rule($v, self::CAPTCHA);
@@ -102,14 +102,13 @@ class Testimonials extends PublicController
             return $form;
         }
 
-        $ip     = $this->request->getIPAddress();
-        $recent = $this->testimonial_model->count_recent_from_ip($ip, 60);
-        if ($recent === false) {
+        $over = $this->over_hourly_limit($this->testimonial_model, self::LIMIT_PER_HOUR);
+        if ($over === null) { // the count could not be read (database error)
             $form['errors'] = ['Your testimonial could not be sent right now. Please try again in a few minutes.'];
 
             return $form;
         }
-        if ($recent >= self::LIMIT_PER_HOUR) {
+        if ($over) {
             $form['errors'] = ['We have already received several testimonials from your connection. Please try again later.'];
 
             return $form;
@@ -137,7 +136,7 @@ class Testimonials extends PublicController
             'friendly_url'            => $slug,
             'testimonial_description' => $form['values']['message'],
             'posted_date'             => date('Y-m-d H:i:s'),
-            'submitted_ip'            => $ip,
+            'submitted_ip'            => $this->request->getIPAddress(),
             'status'                  => '0',
         ]);
 

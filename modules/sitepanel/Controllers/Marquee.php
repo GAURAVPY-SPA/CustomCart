@@ -38,7 +38,7 @@ class Marquee extends AdminController
 
     public function index(): string
     {
-        $keyword = mb_substr(trim((string) $this->request->getGet('keyword')), 0, 80);
+        $keyword = $this->keyword_param();
         $status  = $this->status_param((string) $this->request->getGet('status'));
         $page    = $this->current_page();
         $res     = $this->marquee_model->get_items(($page - 1) * self::PAGESIZE, self::PAGESIZE, $keyword, $status);
@@ -125,40 +125,7 @@ class Marquee extends AdminController
      */
     public function sort(): void
     {
-        $this->require_post();
-        $this->require_privilege(AdminAccess::PRIV_EDIT);
-        $query = $this->list_query();
-
-        $posted = $this->request->getPost('ord');
-        $orders = [];
-        $valid  = is_array($posted) && $posted && count($posted) <= self::PAGESIZE;
-
-        if ($valid) {
-            foreach ($posted as $id => $order) {
-                $order = is_string($order) ? trim($order) : '';
-                if (! preg_match('/^[1-9][0-9]*$/D', (string) $id) || ! preg_match('/^[0-9]{1,4}$/D', $order)) {
-                    $valid = false;
-                    break;
-                }
-                $orders[(int) $id] = (int) $order;
-            }
-        }
-        if (! $valid) {
-            $this->session->setFlashdata('sitepanel_error', 'Enter a display order from 0 to 9999 for each item.');
-            $this->back($query);
-        }
-
-        $ids = array_keys($orders);
-        if (! $this->selected_rows_match($this->marquee_model->get_items_by_ids($ids), $ids)) {
-            $this->back($query);
-        }
-
-        if ($this->marquee_model->update_sort_orders($orders)) {
-            $this->session->setFlashdata('sitepanel_success', 'Display order updated.');
-        } else {
-            $this->session->setFlashdata('sitepanel_error', 'Display order could not be updated. Please try again.');
-        }
-        $this->back($query);
+        $this->save_display_order($this->marquee_model, 'get_items_by_ids', 'item');
     }
 
     /**
@@ -197,21 +164,5 @@ class Marquee extends AdminController
         }
 
         return $saved ? [] : ['Marquee item could not be saved. Please try again.'];
-    }
-
-    /**
-     * List filters to return to after an action (posted with it).
-     */
-    protected function list_query(): array
-    {
-        $keyword = mb_substr(trim((string) $this->request->getPost('keyword')), 0, 80);
-        $status  = $this->status_param((string) $this->request->getPost('status_filter'));
-
-        return array_filter(['keyword' => $keyword, 'status' => $status], static fn ($v) => $v !== '');
-    }
-
-    protected function status_param(string $value): string
-    {
-        return in_array($value, ['1', '0'], true) ? $value : '';
     }
 }

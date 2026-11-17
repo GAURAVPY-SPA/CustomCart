@@ -18,6 +18,11 @@ use App\Models\BaseModel;
 class MetaModel extends BaseModel
 {
     /**
+     * The table: one row per page address of the website.
+     */
+    public const TABLE = 'wl_meta_tags';
+
+    /**
      * entity_type of a static page (Sitepanel > Manage Static Pages), as in
      * the reference: 'pages/index/<friendly_url>', entity_id = page_id. Routed
      * like every row (Pages::index/<page_id>); the prefix is how the static
@@ -196,8 +201,8 @@ class MetaModel extends BaseModel
         try {
             $this->db->transException(true)->transStart();
 
-            $own = $this->table('wl_meta_tags')->where(['entity_type' => $type, 'entity_id' => $id])->get()->getRowArray();
-            $at  = $this->table('wl_meta_tags')->where('page_url', $page_url)->get()->getRowArray();
+            $own = $this->table(self::TABLE)->where(['entity_type' => $type, 'entity_id' => $id])->get()->getRowArray();
+            $at  = $this->table(self::TABLE)->where('page_url', $page_url)->get()->getRowArray();
             if ($at && (! $own || (int) $at['meta_id'] !== (int) $own['meta_id'])) {
                 $this->db->transRollback();
 
@@ -205,9 +210,9 @@ class MetaModel extends BaseModel
             }
 
             if ($own) {
-                $this->table('wl_meta_tags')->where('meta_id', (int) $own['meta_id'])->update($values + ['page_url' => $page_url]);
+                $this->table(self::TABLE)->where('meta_id', (int) $own['meta_id'])->update($values + ['page_url' => $page_url]);
             } else {
-                $this->table('wl_meta_tags')->insert($values + [
+                $this->table(self::TABLE)->insert($values + [
                     'is_fixed' => 'N', 'entity_type' => $type, 'entity_id' => $id, 'page_url' => $page_url, 'status' => '1',
                 ]);
             }
@@ -242,20 +247,20 @@ class MetaModel extends BaseModel
         try {
             $this->db->transException(true)->transStart();
 
-            $at = $this->table('wl_meta_tags')->where('page_url', $page_url)->get()->getRowArray();
+            $at = $this->table(self::TABLE)->where('page_url', $page_url)->get()->getRowArray();
             if ($at) {
                 $this->db->transRollback();
 
                 return 'The address "' . $page_url . '" is already registered in wl_meta_tags (meta_id ' . $at['meta_id'] . ', entity_type "' . $at['entity_type'] . '").';
             }
-            $own = $this->table('wl_meta_tags')->where(['entity_type' => $type, 'entity_id' => 0])->get()->getRowArray();
+            $own = $this->table(self::TABLE)->where(['entity_type' => $type, 'entity_id' => 0])->get()->getRowArray();
             if ($own) {
                 $this->db->transRollback();
 
                 return 'The module page "' . $type . '" is already registered in wl_meta_tags at the address "' . $own['page_url'] . '" (meta_id ' . $own['meta_id'] . ').';
             }
 
-            $this->table('wl_meta_tags')->insert([
+            $this->table(self::TABLE)->insert([
                 'is_fixed'         => 'Y',
                 'entity_type'      => $type,
                 'entity_id'        => 0,
@@ -290,7 +295,7 @@ class MetaModel extends BaseModel
             return false;
         }
 
-        return $this->single_row($this->table('wl_meta_tags')
+        return $this->single_row($this->table(self::TABLE)
             ->select('page_url, entity_type, entity_id')
             ->where('page_url', $page_url)
             ->limit(1)
@@ -309,7 +314,7 @@ class MetaModel extends BaseModel
             return false;
         }
 
-        return $this->single_row($this->table('wl_meta_tags')
+        return $this->single_row($this->table(self::TABLE)
             ->select('page_url, entity_type, entity_id')
             ->where(['entity_type' => $entity_type, 'entity_id' => 0])
             ->orderBy('meta_id', 'ASC')
@@ -330,7 +335,7 @@ class MetaModel extends BaseModel
         if ($urls === null) {
             $urls = [];
             if ($this->db_ready()) {
-                $rows = $this->all_rows($this->table('wl_meta_tags AS m')
+                $rows = $this->all_rows($this->table(self::TABLE . ' AS m')
                     ->select('m.page_url, m.entity_type, m.entity_id, p.status AS page_status')
                     ->join('wl_cms_pages AS p', "m.entity_type LIKE 'pages/%' AND p.page_id = m.entity_id", 'left')
                     ->get());
@@ -354,7 +359,7 @@ class MetaModel extends BaseModel
      */
     public function get_by_page_url(string $page_url)
     {
-        return $this->find('wl_meta_tags', ['page_url' => $page_url]);
+        return $this->find(self::TABLE, ['page_url' => $page_url]);
     }
     /**
      * @param string $keyword Search page slugs
@@ -364,7 +369,7 @@ class MetaModel extends BaseModel
      */
     public function get_meta(int $offset = 0, int $limit = 20, string $keyword = '', string $status = '')
     {
-        return $this->paged_rows('wl_meta_tags', 'meta_id DESC', $offset, $limit, static function ($db) use ($keyword, $status) {
+        return $this->paged_rows(self::TABLE, 'meta_id DESC', $offset, $limit, static function ($db) use ($keyword, $status) {
             if ($keyword !== '') {
                 $db->like('page_url', $keyword);
             }
@@ -381,7 +386,7 @@ class MetaModel extends BaseModel
      */
     public function get_record_by_id($id)
     {
-        return $this->find('wl_meta_tags', ['meta_id' => (int) $id]);
+        return $this->find(self::TABLE, ['meta_id' => (int) $id]);
     }
 
     /**
@@ -389,12 +394,12 @@ class MetaModel extends BaseModel
      *
      * @return string 'available', 'exists', 'invalid', 'unavailable' or 'error'
      */
-    public function check_page_url($page_url, int $except_id = 0): string
+    public function check_page_url($page_url): string
     {
         if (! $this->db_ready()) {
             return 'error';
         }
-        if (! $this->db->tableExists('wl_meta_tags')) {
+        if (! $this->db->tableExists(self::TABLE)) {
             log_message('error', 'Meta_model: wl_meta_tags is missing; apply apps/sql/007_meta_tags.sql.');
 
             return 'unavailable';
@@ -406,12 +411,7 @@ class MetaModel extends BaseModel
         }
 
         foreach ([$page_url, 'pages/' . $page_url] as $path) {
-            $where = ['page_url' => $path];
-            if ($except_id > 0) {
-                $where['meta_id <>'] = $except_id;
-            }
-
-            $count = $this->findCount('wl_meta_tags', $where);
+            $count = $this->findCount(self::TABLE, ['page_url' => $path]);
             if ($count === false) {
                 return 'error';
             }
@@ -434,14 +434,14 @@ class MetaModel extends BaseModel
         if (! $this->db_ready()) {
             return false;
         }
-        if (! $this->db->tableExists('wl_meta_tags')) {
+        if (! $this->db->tableExists(self::TABLE)) {
             return null;
         }
 
         $where = ['entity_type' => $type, 'entity_id' => (int) $id];
         $active_only && $where['status'] = '1';
 
-        return $this->single_row($this->table('wl_meta_tags')->where($where)->orderBy('meta_id', 'DESC')->limit(1)->get());
+        return $this->single_row($this->table(self::TABLE)->where($where)->orderBy('meta_id', 'DESC')->limit(1)->get());
     }
 
     /**
@@ -470,17 +470,17 @@ class MetaModel extends BaseModel
 
         $values['page_url'] = $page_url;
         if ($row) {
-            return $this->safe_update('wl_meta_tags', $values, ['meta_id' => (int) $row['meta_id']]);
+            return $this->safe_update(self::TABLE, $values, ['meta_id' => (int) $row['meta_id']]);
         }
 
         $values += ['is_fixed' => 'N', 'entity_type' => $type, 'entity_id' => (int) $id, 'status' => '1'];
 
-        return $this->safe_insert('wl_meta_tags', $values) !== false;
+        return $this->safe_insert(self::TABLE, $values) !== false;
     }
 
     public function delete_entity_meta(string $type, $id): bool
     {
-        return $this->safe_delete('wl_meta_tags', ['entity_type' => $type, 'entity_id' => (int) $id]);
+        return $this->safe_delete(self::TABLE, ['entity_type' => $type, 'entity_id' => (int) $id]);
     }
 
     /**
@@ -493,7 +493,7 @@ class MetaModel extends BaseModel
         if (! $this->db_ready()) {
             return false;
         }
-        if (! $this->db->tableExists('wl_meta_tags')) {
+        if (! $this->db->tableExists(self::TABLE)) {
             return null;
         }
 
@@ -506,7 +506,7 @@ class MetaModel extends BaseModel
         }
 
         foreach ([$page_url, 'pages/' . $page_url] as $path) {
-            $row = $this->single_row($this->table('wl_meta_tags')->where(['page_url' => $path, 'status' => '1'])
+            $row = $this->single_row($this->table(self::TABLE)->where(['page_url' => $path, 'status' => '1'])
                 ->orderBy('meta_id', 'DESC')
                 ->limit(1)
                 ->get());

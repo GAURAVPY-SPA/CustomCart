@@ -21,9 +21,6 @@ $standalone_groups = array(
 );
 // Further sections shown inside a group keyed by another controller.
 $group_of = array('product_enquiry' => 'enquiry', 'referrals' => 'enquiry');
-// Sections kept (controller, data, permissions) but not shown in the sidebar.
-// A heading whose sections are all hidden is not shown either.
-$hidden_sections = array();
 // Headings shown as expandable groups, in their tbl_admin_sections order (the
 // reference sitepanel's store groups) => icon. Other headings ("General") are plain links.
 $heading_groups = array(
@@ -39,11 +36,6 @@ if ($menu !== FALSE)
 	{
 		foreach ($sections as $index => $section)
 		{
-			if (in_array($section['controller'], $hidden_sections, TRUE))
-			{
-				unset($menu[$heading][$index]);
-				continue;
-			}
 			$group_key = isset($group_of[$section['controller']]) ? $group_of[$section['controller']] : $section['controller'];
 			if (isset($standalone_groups[$group_key]))
 			{

@@ -14,24 +14,7 @@ echo sp_view('includes/header'); ?>
 		</div>
 	</header>
 
-	<form class="sp-filters" method="get" action="<?php echo site_url($base); ?>" role="search" aria-label="Search cities">
-		<div>
-			<label class="form-label" for="filter-keyword">City</label>
-			<input class="form-control" type="search" id="filter-keyword" name="keyword" maxlength="80" value="<?php echo html_escape($keyword); ?>">
-		</div>
-		<div>
-			<label class="form-label" for="filter-status">Status</label>
-			<select class="form-select" id="filter-status" name="status">
-				<option value="">All</option>
-				<option value="1"<?php echo $status === '1' ? ' selected' : ''; ?>>Active</option>
-				<option value="0"<?php echo $status === '0' ? ' selected' : ''; ?>>Inactive</option>
-			</select>
-		</div>
-		<div class="sp-filters-actions">
-			<button class="btn sp-btn-primary" type="submit">Search</button>
-			<?php if ($filtered): ?><a class="btn sp-btn-outline" href="<?php echo site_url($base); ?>">Clear</a><?php endif; ?>
-		</div>
-	</form>
+	<?php echo sp_view('includes/status_filter', array('filter_form' => array('url' => $base, 'aria_label' => 'Search cities', 'label' => 'City', 'keyword' => $keyword, 'status' => $status))); ?>
 
 	<?php if ($res === FALSE): ?>
 		<p class="sp-empty mb-0">Cities could not be loaded. Please try again shortly.</p>
@@ -39,19 +22,9 @@ echo sp_view('includes/header'); ?>
 		<p class="sp-empty mb-0"><?php echo $total ? 'No cities on this page.' : ($filtered ? 'No cities match your search.' : 'No cities added for this state yet.'); ?></p>
 	<?php else: ?>
 		<?php $bulk_enabled = $activatePrvg || $deactivatePrvg || $deletePrvg; ?>
-		<?php /* The shared bulk form posts to <base>/bulk; cities use city_bulk/<state_id>. */ ?>
-		<?php if ($bulk_enabled): ?>
-		<div class="sp-bulk-toolbar">
-			<?php echo form_open('sitepanel/location/city_bulk/'.(int) $state['state_id'], array('id' => 'sp-bulk-cities', 'class' => 'sp-row-actions', 'data-sp-bulk-form' => 'cities', 'data-sp-bulk-noun' => 'cities')); ?>
-				<input type="hidden" name="page" value="<?php echo (int) $page; ?>">
-				<input type="hidden" name="keyword" value="<?php echo html_escape($keyword); ?>">
-				<input type="hidden" name="status_filter" value="<?php echo html_escape($status); ?>">
-				<?php if ($activatePrvg): ?><button class="btn sp-btn-outline" type="submit" name="bulk_action" value="activate">Active</button><?php endif; ?>
-				<?php if ($deactivatePrvg): ?><button class="btn sp-btn-outline" type="submit" name="bulk_action" value="deactivate">Deactive</button><?php endif; ?>
-				<?php if ($deletePrvg): ?><button class="btn sp-btn-outline sp-btn-danger" type="submit" name="bulk_action" value="delete" data-sp-confirm="Delete the selected cities? This cannot be undone.">Delete</button><?php endif; ?>
-			<?php echo form_close(); ?>
-		</div>
-		<?php endif; ?>
+		<?php /* Cities post to city_bulk/<state_id> (not <base>/bulk); the top toolbar has no mt-3. */ ?>
+		<?php $bulk = array('key' => 'cities', 'base' => 'sitepanel/location', 'action' => 'sitepanel/location/city_bulk/'.(int) $state['state_id'], 'top_margin' => FALSE, 'page' => $page, 'noun' => 'cities', 'filters' => array('keyword' => $keyword, 'status_filter' => $status), 'can_activate' => $activatePrvg, 'can_deactivate' => $deactivatePrvg, 'can_delete' => $deletePrvg); ?>
+		<?php echo sp_view('includes/bulk_actions', array('bulk' => $bulk)); ?>
 		<div class="sp-table-wrap">
 			<table class="sp-table sp-table--stack">
 				<caption class="visually-hidden">Cities of <?php echo html_escape($state['state_name']); ?>, by name</caption>
@@ -73,40 +46,18 @@ echo sp_view('includes/header'); ?>
 							<?php if ($row['status'] === '1'): ?><span class="sp-badge sp-badge--ok">Active</span><?php else: ?><span class="sp-badge sp-badge--muted">Inactive</span><?php endif; ?>
 						</td>
 						<td data-label="Actions">
-							<div class="sp-row-actions">
-								<?php if ($editPrvg): ?>
-								<a class="btn sp-btn-outline" href="<?php echo site_url('sitepanel/location/city_edit/'.(int) $row['city_id']); ?>">Edit<span class="visually-hidden"> <?php echo $label; ?></span></a>
-								<?php endif; ?>
-								<?php $active = $row['status'] === '1'; ?>
-								<?php if ($active ? $deactivatePrvg : $activatePrvg): ?>
-								<?php echo form_open('sitepanel/location/city_status/'.(int) $row['city_id']); ?>
-									<input type="hidden" name="status" value="<?php echo $active ? '0' : '1'; ?>">
-									<input type="hidden" name="page" value="<?php echo (int) $page; ?>">
-									<button class="btn sp-btn-outline" type="submit"><?php echo $active ? 'Deactivate' : 'Activate'; ?><span class="visually-hidden"> <?php echo $label; ?></span></button>
-								<?php echo form_close(); ?>
-								<?php endif; ?>
-								<?php if ($deletePrvg): ?>
-								<?php echo form_open('sitepanel/location/city_delete/'.(int) $row['city_id'], array('data-sp-confirm' => 'Delete "'.$row['city_name'].'"? This cannot be undone.')); ?>
-									<input type="hidden" name="page" value="<?php echo (int) $page; ?>">
-									<button class="btn sp-btn-outline sp-btn-danger" type="submit">Delete<span class="visually-hidden"> <?php echo $label; ?></span></button>
-								<?php echo form_close(); ?>
-								<?php endif; ?>
-							</div>
+							<?php $id = (int) $row['city_id']; ?>
+							<?php echo sp_view('includes/row_actions', array('a' => array(
+								'base' => 'sitepanel/location', 'id' => $id, 'page' => $page, 'label' => $row['city_name'], 'active' => $row['status'] === '1',
+								'edit_url' => 'sitepanel/location/city_edit/'.$id, 'status_url' => 'sitepanel/location/city_status/'.$id, 'delete_url' => 'sitepanel/location/city_delete/'.$id,
+							))); ?>
 						</td>
 					</tr>
 					<?php endforeach; ?>
 				</tbody>
 			</table>
 		</div>
-		<?php if ($bulk_enabled): /* the same actions under the table, sent with the bulk form above (form attribute) */ ?>
-		<div class="sp-bulk-toolbar mt-3 sp-bulk-toolbar--bottom">
-			<div class="sp-row-actions">
-				<?php if ($activatePrvg): ?><button form="sp-bulk-cities" class="btn sp-btn-outline" type="submit" name="bulk_action" value="activate">Active</button><?php endif; ?>
-				<?php if ($deactivatePrvg): ?><button form="sp-bulk-cities" class="btn sp-btn-outline" type="submit" name="bulk_action" value="deactivate">Deactive</button><?php endif; ?>
-				<?php if ($deletePrvg): ?><button form="sp-bulk-cities" class="btn sp-btn-outline sp-btn-danger" type="submit" name="bulk_action" value="delete" data-sp-confirm="Delete the selected cities? This cannot be undone.">Delete</button><?php endif; ?>
-			</div>
-		</div>
-		<?php endif; ?>
+		<?php echo sp_view('includes/bulk_actions', array('bulk' => array('position' => 'bottom') + $bulk)); ?>
 	<?php endif; ?>
 	<?php if ($res): ?>
 	<?php echo sp_view('includes/list_foot', array('foot' => array('total' => $total, 'noun' => $total === 1 ? 'city' : 'cities', 'pagination' => $page_links))); ?>

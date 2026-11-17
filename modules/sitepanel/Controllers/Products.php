@@ -174,8 +174,9 @@ class Products extends AdminController
         foreach (['meta_title', 'meta_keyword', 'meta_description'] as $field) {
             $res[$field] = is_array($meta) ? (string) $meta[$field] : '';
         }
-        foreach (['product_price', 'product_discounted_price'] as $field) {
-            (float) $res[$field] === 0.0 && $field === 'product_discounted_price' && $res[$field] = '';
+        // No discount (0.00) shows an empty field.
+        if ((float) $res['product_discounted_price'] === 0.0) {
+            $res['product_discounted_price'] = '';
         }
 
         $data['heading_title'] = 'Edit Product';
@@ -411,7 +412,10 @@ class Products extends AdminController
     }
 
     /**
-     * Save the product form.
+     * Save the product form. The steps, in this order: load and validate the
+     * input (nothing is written while anything is wrong), upload the photos
+     * of a new product, save the product row with its categories, then its
+     * colour / size options, its photos and its SEO row.
      *
      * @param array|null       $row  NULL when adding
      * @param array|false|null $meta Current SEO row (edit)
@@ -428,11 +432,66 @@ class Products extends AdminController
             return ['The form options could not be loaded. Please try again.'];
         }
 
-        $amount   = ['valid_amount', static fn ($value) => (string) $value === '' || preg_match(self::AMOUNT_PATTERN, (string) $value) === 1];
-        $messages = ['valid_amount' => 'The {field} must be a positive number with at most 2 decimals.'];
-        $price    = trim((string) $this->request->getPost('product_price'));
-        $on       = fn (string $feature) => $this->shop->feature($feature);
-        $id       = $row ? (int) $row['products_id'] : 0;
+        $input = $this->checked_product_input($row, $options);
+        if (isset($input['errors'])) {
+            return $input['errors'];
+        }
+
+        $new_files = $row ? [] : $this->upload_new_photos();
+        if (isset($new_files['error'])) {
+            return [$new_files['error']];
+        }
+
+        // The product, its categories, its single stock row and its listing price: one transaction.
+        $id    = $row ? (int) $row['products_id'] : 0;
+        $data  = $this->product_row($row, $input);
+        $saved = $this->product_model->save_product($id, $data, $input['category_ids'], $input['ancestors'], $input['with_quantity'] ? (int) $this->posted_text('product_quantity') : null);
+        if ($saved === false) {
+            foreach ($new_files as $file) {
+                $this->image_upload->delete(self::IMAGE_FOLDER, $file);
+            }
+
+            return ['Product could not be saved. Please try again.'];
+        }
+        $id = $saved;
+
+        $ok = $this->save_product_variants($id, $row, $input);
+        foreach ($new_files as $file) {
+            $ok = $this->product_model->add_media($id, $file) !== false && $ok;
+        }
+        $ok = $this->save_product_meta($id, $input['slug'], $input['description']) && $ok;
+
+        if (! $ok) {
+            $this->session->setFlashdata('sitepanel_error', 'The product was saved, but its options, photos or SEO data could not all be saved. Please check it again.');
+        }
+
+        return (int) $id;
+    }
+
+    /**
+     * Trimmed POST value.
+     */
+    protected function posted_text(string $field): string
+    {
+        return trim((string) $this->request->getPost($field));
+    }
+
+    /**
+     * Load and check everything the product form needs before anything is
+     * written: categories, the "Available quantity" case, the form rules,
+     * colours / sizes, the product code, the URL slug, the sanitized texts
+     * and the categories' ancestors. Field errors are collected so they show
+     * at once; a value that could not be loaded ends the checks with one message.
+     *
+     * @param array $options form_options()
+     *
+     * @return array ['errors' => list<string>] or the checked input: category_ids,
+     *               ancestors, with_quantity, colors, sizes, code, slug, description, specs
+     */
+    protected function checked_product_input(?array $row, array $options): array
+    {
+        $on = fn (string $feature) => $this->shop->feature($feature);
+        $id = $row ? (int) $row['products_id'] : 0;
 
         // Categories (one or more), checked before the other fields so every error shows at once.
         $category_ids    = $this->posted_ids('category_ids');
@@ -444,11 +503,72 @@ class Products extends AdminController
         }
 
         // "Available quantity": products without colour / size options (one stock row) when the Stock page is off.
-        $stock_rows    = $row ? $this->product_model->get_stock_rows($id) : [];
+        $stock_rows = $row ? $this->product_model->get_stock_rows($id) : [];
         if ($stock_rows === false) {
-            return ['The product\'s stock could not be loaded. Please try again.'];
+            return ['errors' => ['The product\'s stock could not be loaded. Please try again.']];
         }
         $with_quantity = ! $on('stock') && count($stock_rows) <= 1;
+
+        $rule_errors = $this->product_rule_errors($options, $with_quantity);
+        if ($rule_errors) {
+            return ['errors' => array_merge($category_errors, $rule_errors)];
+        }
+
+        $errors = $category_errors;
+
+        // Colours / sizes: posted when offered, else the product keeps its own.
+        $colors = $on('colors') ? $this->posted_ids('color_ids') : ($row ? ($this->product_model->get_color_ids($id) ?: []) : []);
+        $sizes  = $on('sizes') ? $this->posted_ids('size_ids') : ($row ? ($this->product_model->get_size_ids($id) ?: []) : []);
+        if (($on('colors') && array_diff($colors, array_keys($options['colors']))) || ($on('sizes') && array_diff($sizes, array_keys($options['sizes'])))) {
+            $errors[] = 'One or more of the selected colours or sizes no longer exist. Please review them.';
+        }
+
+        $code  = $this->posted_text('product_code');
+        $taken = $this->product_model->code_taken($code, $id);
+        if ($taken === null) {
+            return ['errors' => ['The product code could not be checked. Please try again.']];
+        }
+        $taken && $errors[] = 'Another product already uses the product code "' . $code . '".';
+
+        // The URL slug: made here from the name, never from the form (slug_for()).
+        $slug = $this->slug_for($this->posted_text('product_name'), $row);
+        if ($slug === false) {
+            return ['errors' => ['The URL slug could not be checked. Please try again.']];
+        }
+        if ($slug === '') {
+            $errors[] = 'The product name needs at least one letter or number to make its URL slug.';
+        }
+
+        $sanitizer   = new HtmlSanitizer();
+        $description = $sanitizer->clean((string) $this->request->getPost('products_description'));
+        $specs       = $sanitizer->clean((string) $this->request->getPost('products_specification'));
+        $ancestors   = [];
+        foreach ($errors ? [] : $category_ids as $category_id) {
+            $ancestors[$category_id] = $this->category_model->ancestor_ids($category_id);
+            if ($ancestors[$category_id] === false) {
+                return ['errors' => ['The categories could not be loaded. Please try again.']];
+            }
+        }
+        if ($errors) {
+            return ['errors' => $errors];
+        }
+
+        return compact('category_ids', 'ancestors', 'with_quantity', 'colors', 'sizes', 'code', 'slug', 'description', 'specs');
+    }
+
+    /**
+     * Run the product form rules (only those of the features that are on).
+     *
+     * @param array $options form_options()
+     *
+     * @return list<string> Errors (empty = valid)
+     */
+    protected function product_rule_errors(array $options, bool $with_quantity): array
+    {
+        $amount   = ['valid_amount', static fn ($value) => (string) $value === '' || preg_match(self::AMOUNT_PATTERN, (string) $value) === 1];
+        $messages = ['valid_amount' => 'The {field} must be a positive number with at most 2 decimals.'];
+        $price    = $this->posted_text('product_price');
+        $on       = fn (string $feature) => $this->shop->feature($feature);
 
         $v = new FormValidation($this->request, $this);
         $on('brand') && $v->set_rules('brand_id', 'Brand', ['trim', ['valid_brand', static fn ($value) => (string) $value === '' || isset($options['brands'][(int) $value])]], ['valid_brand' => 'Choose a brand from the list.']);
@@ -470,78 +590,57 @@ class Products extends AdminController
         $v->set_rules('meta_title', 'Meta title', 'trim|max_length[450]');
         $v->set_rules('meta_keyword', 'Meta keywords', 'trim|max_length[450]');
         $v->set_rules('meta_description', 'Meta description', 'trim|max_length[650]');
-        if (! $v->run()) {
-            return array_merge($category_errors, array_values($v->error_array()));
-        }
 
-        $post   = fn (string $field) => trim((string) $this->request->getPost($field));
-        $errors = $category_errors;
+        return $v->run() ? [] : array_values($v->error_array());
+    }
 
-        // Colours / sizes: posted when offered, else the product keeps its own.
-        $colors = $on('colors') ? $this->posted_ids('color_ids') : ($row ? ($this->product_model->get_color_ids($id) ?: []) : []);
-        $sizes  = $on('sizes') ? $this->posted_ids('size_ids') : ($row ? ($this->product_model->get_size_ids($id) ?: []) : []);
-        if (($on('colors') && array_diff($colors, array_keys($options['colors']))) || ($on('sizes') && array_diff($sizes, array_keys($options['sizes'])))) {
-            $errors[] = 'One or more of the selected colours or sizes no longer exist. Please review them.';
-        }
-
-        $code  = $post('product_code');
-        $taken = $this->product_model->code_taken($code, $id);
-        if ($taken === null) {
-            return ['The product code could not be checked. Please try again.'];
-        }
-        $taken && $errors[] = 'Another product already uses the product code "' . $code . '".';
-
-        // The URL slug: made here from the name, never from the form (slug_for()).
-        $slug = $this->slug_for($post('product_name'), $row);
-        if ($slug === false) {
-            return ['The URL slug could not be checked. Please try again.'];
-        }
-        if ($slug === '') {
-            $errors[] = 'The product name needs at least one letter or number to make its URL slug.';
-        }
-
-        $sanitizer   = new HtmlSanitizer();
-        $description = $sanitizer->clean((string) $this->request->getPost('products_description'));
-        $specs       = $sanitizer->clean((string) $this->request->getPost('products_specification'));
-        $ancestors   = [];
-        foreach ($errors ? [] : $category_ids as $category_id) {
-            $ancestors[$category_id] = $this->category_model->ancestor_ids($category_id);
-            if ($ancestors[$category_id] === false) {
-                return ['The categories could not be loaded. Please try again.'];
-            }
-        }
-        if ($errors) {
-            return $errors;
-        }
-
-        // Photos of a new product (photo_1 .. photo_N).
+    /**
+     * Upload the photos of a new product (photo_1 .. photo_N). On an upload
+     * error the photos already uploaded are deleted again.
+     *
+     * @return array list of saved file names, or ['error' => message]
+     */
+    protected function upload_new_photos(): array
+    {
         $new_files = [];
-        if (! $row) {
-            for ($n = 1; $n <= self::NEW_PHOTOS; $n++) {
-                if (! $this->image_upload->has_file('photo_' . $n)) {
-                    continue;
-                }
-                $upload = $this->image_upload->save('photo_' . $n, self::IMAGE_FOLDER, 'Photo ' . $n, self::IMAGE_MAX_SIZE);
-                if (isset($upload['error'])) {
-                    foreach ($new_files as $file) {
-                        $this->image_upload->delete(self::IMAGE_FOLDER, $file);
-                    }
 
-                    return [$upload['error']];
-                }
-                $new_files[] = $upload['file'];
+        for ($n = 1; $n <= self::NEW_PHOTOS; $n++) {
+            if (! $this->image_upload->has_file('photo_' . $n)) {
+                continue;
             }
+            $upload = $this->image_upload->save('photo_' . $n, self::IMAGE_FOLDER, 'Photo ' . $n, self::IMAGE_MAX_SIZE);
+            if (isset($upload['error'])) {
+                foreach ($new_files as $file) {
+                    $this->image_upload->delete(self::IMAGE_FOLDER, $file);
+                }
+
+                return ['error' => $upload['error']];
+            }
+            $new_files[] = $upload['file'];
         }
+
+        return $new_files;
+    }
+
+    /**
+     * The product's wl_products columns from the form.
+     *
+     * @param array $input checked_product_input()
+     */
+    protected function product_row(?array $row, array $input): array
+    {
+        $on   = fn (string $feature) => $this->shop->feature($feature);
+        $post = fn (string $field) => $this->posted_text($field);
 
         $data = [
             'product_name'             => $post('product_name'),
-            'friendly_url'             => $slug,
-            'product_code'             => $code,
+            'friendly_url'             => $input['slug'],
+            'product_code'             => $input['code'],
             'product_alt'              => $post('product_alt') !== '' ? $post('product_alt') : $post('product_name'),
             'product_price'            => $post('product_price'),
             'product_discounted_price' => $post('product_discounted_price') !== '' ? $post('product_discounted_price') : '0.00',
-            'products_description'     => trim(strip_tags($description, '<img>')) !== '' ? $description : null,
-            'products_specification'   => trim(strip_tags($specs, '<img>')) !== '' ? $specs : null,
+            'products_description'     => trim(strip_tags($input['description'], '<img>')) !== '' ? $input['description'] : null,
+            'products_specification'   => trim(strip_tags($input['specs'], '<img>')) !== '' ? $input['specs'] : null,
             'status'                   => $post('status'),
             'is_recently_added'       => $row ? ($row['is_recently_added'] ?? '0') : '1',
             'product_updated_date'     => date('Y-m-d H:i:s'),
@@ -566,40 +665,45 @@ class Products extends AdminController
         }
         $row || $data['product_added_date'] = $data['product_updated_date'];
 
-        // The product, its categories, its single stock row and its listing price: one transaction.
-        $saved = $this->product_model->save_product($id, $data, $category_ids, $ancestors, $with_quantity ? (int) $post('product_quantity') : null);
-        if ($saved === false) {
-            foreach ($new_files as $file) {
-                $this->image_upload->delete(self::IMAGE_FOLDER, $file);
-            }
+        return $data;
+    }
 
-            return ['Product could not be saved. Please try again.'];
+    /**
+     * Save the product's colour / size options (its stock matrix). A new
+     * product without options or "Available quantity" gets its single stock
+     * row, set on the Stock page.
+     *
+     * @param array $input checked_product_input()
+     */
+    protected function save_product_variants(int $id, ?array $row, array $input): bool
+    {
+        if ($this->shop->feature('colors') || $this->shop->feature('sizes')) {
+            return $this->product_model->save_variants($id, $input['colors'], $input['sizes']);
         }
-        $id = $saved;
-
-        $ok = true;
-        if ($on('colors') || $on('sizes')) {
-            $ok = $this->product_model->save_variants($id, $colors, $sizes);
-        } elseif (! $row && ! $with_quantity) {
-            $ok = $this->product_model->save_variants($id, [], []); // the single stock row, set on the Stock page
-        }
-        foreach ($new_files as $file) {
-            $ok = $this->product_model->add_media($id, $file) !== false && $ok;
+        if (! $row && ! $input['with_quantity']) {
+            return $this->product_model->save_variants($id, [], []);
         }
 
-        // The product's wl_meta_tags row is its address on the website, so it always exists.
+        return true;
+    }
+
+    /**
+     * Save the product's wl_meta_tags row: its address on the website, so it
+     * always exists. Empty SEO fields get defaults from the name and description.
+     */
+    protected function save_product_meta(int $id, string $slug, string $description): bool
+    {
+        $post = fn (string $field) => $this->posted_text($field);
+        $name = $post('product_name');
+        $site = trim($this->site_settings->get('site_name'));
+
         $seo = [
-            'meta_title'       => $post('meta_title') !== '' ? $post('meta_title') : $post('product_name') . ' | CustomCart',
-            'meta_keyword'     => $post('meta_keyword') !== '' ? $post('meta_keyword') : $post('product_name'),
-            'meta_description' => $post('meta_description') !== '' ? $post('meta_description') : (mb_substr(trim(preg_replace('/\s+/', ' ', strip_tags($description))), 0, 160) ?: $post('product_name')),
+            'meta_title'       => $post('meta_title') !== '' ? $post('meta_title') : $name . ' | ' . ($site !== '' ? $site : 'CustomCart'),
+            'meta_keyword'     => $post('meta_keyword') !== '' ? $post('meta_keyword') : $name,
+            'meta_description' => $post('meta_description') !== '' ? $post('meta_description') : (mb_substr(trim(preg_replace('/\s+/', ' ', strip_tags($description))), 0, 160) ?: $name),
         ];
-        $ok = $this->meta_model->save_entity_meta(self::META_TYPE, $id, ProductModel::URL_PREFIX . $slug, $seo) && $ok;
 
-        if (! $ok) {
-            $this->session->setFlashdata('sitepanel_error', 'The product was saved, but its options, photos or SEO data could not all be saved. Please check it again.');
-        }
-
-        return (int) $id;
+        return $this->meta_model->save_entity_meta(self::META_TYPE, $id, ProductModel::URL_PREFIX . $slug, $seo);
     }
 
     /**
@@ -611,20 +715,33 @@ class Products extends AdminController
      * The URL slug of a product being saved, always made here from its name
      * (a posted friendly_url is ignored), as the category Page URL is:
      *  - edit, name unchanged: its current slug, untouched;
-     *  - otherwise: sp_page_slug(name), or the first free one of slug-2,
-     *    slug-3... — free meaning no other product has it and its address
-     *    (products live at the site root) is used by no other row of
-     *    wl_meta_tags (categories, pages) and is not reserved.
+     *  - otherwise: free_slug().
      *
      * @return false|string '' when the name has no letters or digits, FALSE when it could not be checked
      */
     protected function slug_for(string $name, ?array $row)
     {
-        $id = $row ? (int) $row['products_id'] : 0;
         if ($row && $name === (string) $row['product_name']) {
             return (string) $row['friendly_url'];
         }
 
+        return self::free_slug($this->product_model, $this->meta_model, $name, $row);
+    }
+
+    /**
+     * A product URL slug made from a name (also used by Products Bulk Upload):
+     * sp_page_slug(name), or the first free one of slug-2, slug-3... — free
+     * meaning no other product has it and its address (products live at the
+     * site root) is used by no other row of wl_meta_tags (categories, pages)
+     * and is not reserved. An edited product ($row) may keep its own slug.
+     *
+     * @param array|null $row The product being edited, NULL for a new one
+     *
+     * @return false|string '' when the name has no letters or digits, FALSE when it could not be checked
+     */
+    public static function free_slug(ProductModel $product_model, MetaModel $meta_model, string $name, ?array $row = null)
+    {
+        $id   = $row ? (int) $row['products_id'] : 0;
         $base = sp_page_slug($name, self::SLUG_MAX);
         if ($base === '') {
             return '';
@@ -637,8 +754,8 @@ class Products extends AdminController
                 return $slug; // its own slug already
             }
 
-            $taken = $this->product_model->url_taken($slug, $id);
-            $other = $this->meta_model->get_by_page_url(ProductModel::URL_PREFIX . $slug);
+            $taken = $product_model->url_taken($slug, $id);
+            $other = $meta_model->get_by_page_url(ProductModel::URL_PREFIX . $slug);
             if ($taken === null || $other === false) {
                 return false;
             }
@@ -822,7 +939,7 @@ class Products extends AdminController
         $stock  = (string) ($input['stock'] ?? '');
 
         return [
-            'keyword'  => mb_substr(trim((string) ($input['keyword'] ?? '')), 0, 80),
+            'keyword'  => $this->keyword_param((string) ($input['keyword'] ?? '')),
             'status'   => in_array($status, ['1', '0'], true) ? $status : '',
             'category' => max(0, (int) ($input['category'] ?? 0)) ?: '',
             'brand'    => $this->shop->feature('brand') ? (max(0, (int) ($input['brand'] ?? 0)) ?: '') : '',

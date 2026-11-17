@@ -74,7 +74,6 @@ class DeliveryAddress
      */
     public static function valid_mobile(string $mobile, string $country = ''): bool
     {
-        // Saudi-only check removed: $pattern = self::is_home($country) ? config(Shop::class)->mobilePattern : self::INTL_MOBILE;
         return preg_match(self::INTL_MOBILE, self::digits($mobile)) === 1;
     }
 
@@ -85,7 +84,6 @@ class DeliveryAddress
     {
         $what = $what !== '' ? ' ' . $what : '';
 
-        // Saudi-only message removed: 'Please enter a Saudi mobile number' . $what . ', e.g. +966 5X XXX XXXX or 05X XXX XXXX.'
         return 'Please enter a valid mobile number' . $what . ' (7 to 15 digits, e.g. +966501234567).';
     }
 
@@ -104,7 +102,7 @@ class DeliveryAddress
         $home    = self::is_home($country);
         $mobile  = static fn ($value) => $value === '' || self::valid_mobile((string) $value, $country);
 
-        $v->set_rules('full_name', 'Full Name', "required|max_length[100]|regex_match[/^[\\p{L}][\\p{L} .'\\-]*$/u]", ['regex_match' => 'The Full Name may contain only letters, spaces and . \' -']);
+        $v->set_rules('full_name', 'Full Name', 'required|max_length[100]|' . FormValidation::PERSON_NAME, ['regex_match' => 'The Full Name may contain only letters, spaces and . \' -']);
         $v->set_rules('mobile', 'Mobile Number', ['required', ['valid_mobile', $mobile]], ['valid_mobile' => self::mobile_message($country)]);
         $v->set_rules('alt_mobile', 'Alternate Mobile', [['valid_mobile', $mobile]], ['valid_mobile' => self::mobile_message($country, 'for the Alternate Mobile') . ' Or leave it empty.']);
         $v->set_rules('landmark', 'Landmark', 'max_length[150]');
@@ -128,7 +126,7 @@ class DeliveryAddress
      */
     public static function to_book(array $values): array
     {
-        [$first, $last] = array_pad(preg_split('/\s+/u', $values['full_name'], 2), 2, '');
+        [$first, $last] = split_name($values['full_name']);
 
         return [
             'first_name' => mb_substr($first, 0, 50), 'last_name' => mb_substr($last, 0, 50), 'address' => $values['address'],

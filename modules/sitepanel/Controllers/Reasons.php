@@ -38,7 +38,7 @@ class Reasons extends AdminController
 
     public function index(): string
     {
-        $keyword = mb_substr(trim((string) $this->request->getGet('keyword')), 0, 80);
+        $keyword = $this->keyword_param();
         $type    = $this->type_param((string) $this->request->getGet('type'));
         $status  = $this->status_param((string) $this->request->getGet('status'));
         $page    = $this->current_page();
@@ -122,10 +122,10 @@ class Reasons extends AdminController
     public function bulk(): void
     {
         $this->process_bulk_action($this->reason_model, 'get_reasons_by_ids', 'Reason', array_filter([
-            'keyword' => mb_substr(trim((string) $this->request->getPost('keyword')), 0, 80),
+            'keyword' => $this->keyword_param((string) $this->request->getPost('keyword')),
             'type'    => $this->type_param((string) $this->request->getPost('type')),
             'status'  => $this->status_param((string) $this->request->getPost('status_filter')),
-        ]));
+        ], static fn ($v) => $v !== ''));
     }
 
     /**
@@ -172,10 +172,5 @@ class Reasons extends AdminController
     protected function type_param(string $value): string
     {
         return isset(ReasonModel::TYPES[$value]) ? $value : '';
-    }
-
-    protected function status_param(string $value): string
-    {
-        return in_array($value, ['1', '0'], true) ? $value : '';
     }
 }

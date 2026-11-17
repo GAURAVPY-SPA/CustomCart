@@ -119,9 +119,10 @@ class AdminModel extends BaseModel
             $data += ['failed_attempts' => 0, 'locked_until' => null];
         }
 
-        return (bool) $this->table(self::TABLE)
+        // A database error is logged and returns FALSE, as for the other writes.
+        return ! $this->write_failed(fn () => $this->table(self::TABLE)
             ->where('admin_id', $admin_id)
-            ->update($data);
+            ->update($data));
     }
 
     /**

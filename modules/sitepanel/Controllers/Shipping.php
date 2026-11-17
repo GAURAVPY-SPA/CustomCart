@@ -40,8 +40,7 @@ class Shipping extends AdminController
 
     public function index(): string
     {
-        $status = (string) $this->request->getGet('status');
-        $status = in_array($status, ['1', '0'], true) ? $status : '';
+        $status = $this->status_param((string) $this->request->getGet('status'));
         $page   = $this->current_page();
         $res    = $this->shipping_model->get_shipping_methods(($page - 1) * self::PAGESIZE, self::PAGESIZE, $status);
 
@@ -142,8 +141,9 @@ class Shipping extends AdminController
 
     public function bulk(): void
     {
-        $status = (string) $this->request->getPost('status_filter');
-        $this->process_bulk_action($this->shipping_model, 'get_shipping_by_ids', 'Delivery method', array_filter(['status' => in_array($status, ['1', '0'], true) ? $status : '']));
+        $status = $this->status_param((string) $this->request->getPost('status_filter'));
+        $query  = $status !== '' ? ['status' => $status] : []; // keeps the Inactive ('0') filter
+        $this->process_bulk_action($this->shipping_model, 'get_shipping_by_ids', 'Delivery method', $query);
     }
 
     /**

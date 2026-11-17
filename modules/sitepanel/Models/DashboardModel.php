@@ -10,48 +10,6 @@ use App\Models\BaseModel;
 class DashboardModel extends BaseModel
 {
     /**
-     * @return array|false ['total' => int, 'active' => int]
-     */
-    public function admin_counts()
-    {
-        if (! $this->db_ready()) {
-            return false;
-        }
-
-        $row = $this->single_row($this->table('tbl_admin')
-            ->select('COUNT(*) AS total, COALESCE(SUM(status = 1), 0) AS active', false)
-            ->get());
-
-        return is_array($row)
-            ? ['total' => (int) $row['total'], 'active' => (int) $row['active']]
-            : false;
-    }
-
-    /**
-     * Live connection check with a trivial query.
-     *
-     * @return array ['connected' => bool, 'server_version' => string|null, 'database' => string|null]
-     */
-    public function database_status(): array
-    {
-        $status = ['connected' => false, 'server_version' => null, 'database' => null];
-
-        if (! $this->db_ready()) {
-            return $status;
-        }
-
-        $row = $this->single_row($this->db->query('SELECT 1 AS ok, DATABASE() AS db_name'));
-
-        if (is_array($row) && (int) $row['ok'] === 1) {
-            $status['connected']      = true;
-            $status['database']       = $row['db_name'];
-            $status['server_version'] = $this->db->getVersion();
-        }
-
-        return $status;
-    }
-
-    /**
      * Summary-card counts, each as the listing pages count them.
      *
      * @return array categories / products => [total, active] (not deleted),
@@ -200,7 +158,7 @@ class DashboardModel extends BaseModel
         }
 
         foreach ($row as $key => $value) {
-            $key === 'latest' || $row[$key] = (int) $value;
+            $row[$key] = (int) $value;
         }
 
         return $row;

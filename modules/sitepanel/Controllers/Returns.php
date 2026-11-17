@@ -40,7 +40,7 @@ class Returns extends AdminController
         $get     = $this->request->getGet();
         $refund  = in_array($get['refund'] ?? '', self::REFUND_STATUSES, true) ? (string) $get['refund'] : '';
         $request = in_array($get['request'] ?? '', ['cancel', 'return'], true) ? (string) $get['request'] : 'any';
-        $filters = ['keyword' => mb_substr(trim((string) ($get['keyword'] ?? '')), 0, 80), 'request' => $request, 'refund' => $refund];
+        $filters = ['keyword' => $this->keyword_param((string) ($get['keyword'] ?? '')), 'request' => $request, 'refund' => $refund];
         $page    = $this->current_page();
         $res     = $this->order_model->get_order_items(($page - 1) * self::PAGESIZE, self::PAGESIZE, $filters);
 

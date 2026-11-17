@@ -30,7 +30,7 @@ class Referrals extends AdminController
 
     public function index(): string
     {
-        $keyword = mb_substr(trim((string) $this->request->getGet('keyword')), 0, 80);
+        $keyword = $this->keyword_param();
         $page    = $this->current_page();
 
         $data['heading_title'] = 'Refer a Friend';
@@ -68,7 +68,7 @@ class Referrals extends AdminController
 
     public function bulk(): never
     {
-        $query = ['keyword' => mb_substr(trim((string) $this->request->getPost('keyword')), 0, 80)];
+        $query = ['keyword' => $this->keyword_param((string) $this->request->getPost('keyword'))];
         // Referrals have no status: delete is the only bulk action.
         if ($this->request->getPost('bulk_action') !== 'delete') {
             $this->session->setFlashdata('sitepanel_error', 'Choose a valid bulk action.');

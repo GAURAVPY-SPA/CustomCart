@@ -46,11 +46,11 @@ class Dashboard extends AdminController
             'heading_title' => 'Dashboard',
             'breadcrumbs'   => ['Dashboard' => null],
             'cards'         => array_merge($this->summary_cards($counts), $this->store_cards($store)),
-            'store'         => $store + ['can_orders' => $this->may_open('orders'), 'can_products' => $this->may_open('products')],
+            'store'         => $store + ['can_orders' => $this->can_open_section('orders'), 'can_products' => $this->can_open_section('products')],
             'currency'      => (string) (site_currency()['code'] ?? 'SAR'),
             'recent'        => $this->recent_boxes($counts, $model->recent_records()),
             // Config\Sitepanel::$showDashboardOrdersGraph off: no section and none of its queries.
-            'chart'         => config(SitepanelConfig::class)->showDashboardOrdersGraph && $this->may_open('orders') ? $this->orders_chart($model) : null,
+            'chart'         => config(SitepanelConfig::class)->showDashboardOrdersGraph && $this->can_open_section('orders') ? $this->orders_chart($model) : null,
             'period'        => isset(self::PERIODS[$period]) ? $period : 'daily',
         ]);
     }
@@ -193,7 +193,7 @@ class Dashboard extends AdminController
         $code  = (string) (site_currency()['code'] ?? 'SAR');
         $cards = [];
 
-        if (! $this->may_open('orders')) {
+        if (! $this->can_open_section('orders')) {
             $cards[] = $this->card('chart', 'Revenue', '—', 'No access to this section') + ['key' => 'revenue'];
         } elseif ($store['revenue'] === false) {
             $cards[] = $this->card('chart', 'Revenue', 'Unavailable', 'Could not be read', 'warn') + ['key' => 'revenue'];
@@ -204,7 +204,7 @@ class Dashboard extends AdminController
                 + ['url' => site_url('sitepanel/orders'), 'key' => 'revenue'];
         }
 
-        if (! $this->may_open('products')) {
+        if (! $this->can_open_section('products')) {
             $cards[] = $this->card('alert', 'Low Stock', '—', 'No access to this section') + ['key' => 'lowstock'];
         } elseif ($store['low_products'] === false) {
             $cards[] = $this->card('alert', 'Low Stock', 'Unavailable', 'Could not be read', 'warn') + ['key' => 'lowstock'];
@@ -250,7 +250,7 @@ class Dashboard extends AdminController
 
         $out = [];
         foreach ($boxes as $key => [$icon, $label, $section, $empty, $meta, $item]) {
-            $box = ['icon' => $icon, 'label' => $label, 'url' => site_url('sitepanel/' . $section), 'empty' => $empty, 'access' => $this->may_open($section)];
+            $box = ['icon' => $icon, 'label' => $label, 'url' => site_url('sitepanel/' . $section), 'empty' => $empty, 'access' => $this->can_open_section($section)];
             if ($box['access']) {
                 $c     = $counts[$key];
                 $list  = $rows[$key];
@@ -279,7 +279,7 @@ class Dashboard extends AdminController
     protected function count_card(string $section, string $icon, string $label, $c, callable $meta, string $value = 'total'): array
     {
         // 'key' picks the card's gradient (Config\Sitepanel::$themeStatGradients).
-        if (! $this->may_open($section)) {
+        if (! $this->can_open_section($section)) {
             return $this->card($icon, $label, '—', 'No access to this section') + ['key' => $section];
         }
         if ($c === false) {
@@ -289,15 +289,6 @@ class Dashboard extends AdminController
         return $this->card($icon, $label, number_format($c[$value]), $meta($c)) + ['url' => site_url('sitepanel/' . $section), 'key' => $section];
     }
 
-    /**
-     * @param string $section Lower-case sitepanel controller name
-     */
-    protected function may_open(string $section): bool
-    {
-        $codes = $this->admin_access->permissions_for($this->admin, $section);
-
-        return is_array($codes) && in_array(AdminAccess::PRIV_VIEW, $codes, true);
-    }
 
     protected function card(string $icon, string $label, string $value, string $meta, string $tone = 'neutral'): array
     {

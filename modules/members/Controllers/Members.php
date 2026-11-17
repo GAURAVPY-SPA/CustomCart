@@ -13,6 +13,7 @@ use Modules\Cart\Libraries\DeliveryAddress;
 use Modules\Members\Models\AddressModel;
 use Modules\Members\Models\WishlistModel;
 use Modules\Sitepanel\Models\CouponModel;
+use Modules\Sitepanel\Models\NewsletterModel;
 use Modules\Products\Models\ProductModel;
 use Modules\Users\Controllers\Users;
 use Modules\Users\Libraries\CustomerAuth;
@@ -223,14 +224,17 @@ class Members extends PublicController
 
     /**
      * POST action=cancel|return, item_id, reason, comment: ask to cancel or
-     * return one line of this order. Redirects when saved.
+     * return one line of this order. Redirects with the result, or in the
+     * popup ($frame) returns it.
+     *
+     * @return array{0: bool, 1: string} [sent, message]
      */
-    protected function submit_request(array $customer, array $order, array $items, bool $frame = false): string
+    protected function submit_request(array $customer, array $order, array $items, bool $frame = false): array
     {
-        // In the popup ($frame) the message is returned ('!' + message = an error) instead of redirecting.
-        $finish = static function (bool $ok, string $message, string $back) use ($frame): string {
+        // In the popup ($frame) [ok, message] is returned instead of redirecting.
+        $finish = static function (bool $ok, string $message, string $back) use ($frame): array {
             if ($frame) {
-                return ($ok ? '' : '!') . $message;
+                return [$ok, $message];
             }
             session()->setFlashdata($ok ? 'shop_success' : 'shop_error', $message);
             redirect_now($back);
@@ -259,8 +263,13 @@ class Members extends PublicController
             return $finish(false, implode(' ', $v->error_array()), $back);
         }
 
-        $saved = $this->orders->request_item($id, $action, (string) $this->request->getPost('reason'), trim((($kind = trim((string) $this->request->getPost('request_type'))) !== '' && in_array($kind, ['Return & Refund', 'Exchange'], true) ? 'Request type: ' . $kind . "
-" : '') . trim((string) $this->request->getPost('comment'))));
+        // The comment, after a "Request type: ..." line when a known request type was chosen.
+        $kind    = trim((string) $this->request->getPost('request_type'));
+        $comment = in_array($kind, ['Return & Refund', 'Exchange'], true) ? 'Request type: ' . $kind . "\n" : '';
+        $comment = trim($comment . trim((string) $this->request->getPost('comment')));
+
+        $saved = $this->orders->request_item($id, $action, (string) $this->request->getPost('reason'), $comment);
+
         return $finish($saved, $saved
             ? 'Your ' . ($action === 'cancel' ? 'cancellation' : 'return') . ' request for "' . $item['product_name'] . '" has been sent. We will let you know once it has been reviewed.'
             : 'Your request could not be sent right now. Please try again shortly.', $back);
@@ -286,7 +295,8 @@ class Members extends PublicController
     }
 
     /**
-     * Ids among $ids that have colours or sizes (Add to Cart needs a choice on the product page).
+     * Ids among $ids that have colours or sizes (Add to Cart needs a choice on
+     * the product page), in one query (ProductModel::variant_product_ids()).
      *
      * @param list<int|string> $ids
      *
@@ -294,16 +304,9 @@ class Members extends PublicController
      */
     protected function variant_products(array $ids): array
     {
-        $model    = new ProductModel();
-        $variants = [];
+        $found = (new ProductModel())->variant_product_ids(array_map('intval', $ids));
 
-        foreach ($ids as $id) {
-            if ($model->get_product_colors((int) $id) || $model->get_product_sizes((int) $id)) {
-                $variants[(int) $id] = true;
-            }
-        }
-
-        return $variants;
+        return array_fill_keys(is_array($found) ? $found : [], true);
     }
 
     /**
@@ -372,10 +375,7 @@ class Members extends PublicController
 
             $v = new FormValidation($this->request, $this);
             $v->set_data($values);
-            $v->set_rules('full_name', 'Full Name', "required|min_length[3]|max_length[100]|regex_match[/^[\\p{L}][\\p{L} .'\\-]*$/u]", ['regex_match' => 'The {field} may contain only letters, spaces and . \' -']);
-            // Saudi-only check removed:
-            // $v->set_rules('mobile_number', 'Mobile Number', ['required', ['saudi_mobile', static fn ($value) => preg_match(config(Shop::class)->mobilePattern, (string) $value) === 1]],
-            //     ['saudi_mobile' => 'Please enter a Saudi mobile number, e.g. +966 5X XXX XXXX.']);
+            $v->set_rules('full_name', 'Full Name', 'required|min_length[3]|max_length[100]|' . FormValidation::PERSON_NAME, ['regex_match' => 'The {field} may contain only letters, spaces and . \' -']);
             $v->set_rules('mobile_number', 'Mobile Number', ['required', ['valid_mobile', static fn ($value) => DeliveryAddress::valid_mobile((string) $value)]],
                 ['valid_mobile' => DeliveryAddress::mobile_message('')]);
 
@@ -384,11 +384,11 @@ class Members extends PublicController
             } elseif (($mobile_taken = $this->customers->member_mobile_taken($values['mobile_number'], (int) $customer['customers_id'])) !== false) {
                 $errors = [$mobile_taken === null ? 'Your details could not be saved right now. Please try again shortly.' : 'Another account already uses this mobile number.'];
             } else {
-                [$first, $last] = array_pad(preg_split('/\s+/u', $values['full_name'], 2), 2, '');
+                [$first, $last] = split_name($values['full_name']);
                 $data = ['first_name' => mb_substr($first, 0, 50), 'last_name' => mb_substr($last, 0, 50), 'mobile_number' => $values['mobile_number'], 'newsletter' => $values['newsletter']];
                 if ($this->customers->update_profile((int) $customer['customers_id'], $data)) {
                     if ($values['newsletter'] === '1' && $customer['newsletter'] !== '1') {
-                        $this->customers->subscribe_newsletter($customer['user_name'], $first);
+                        (new NewsletterModel())->subscribe(strtolower(trim((string) $customer['user_name'])), $first);
                     }
                     session()->setFlashdata('shop_success', 'Your profile has been updated.');
                     redirect_now('acc-edit');
@@ -566,21 +566,19 @@ class Members extends PublicController
             $this->not_found_page();
         }
         $allowed = $type === 'cancel' ? $this->can_cancel($order, $item) : $this->can_return($order, $item);
-        $sent    = '';
-
-        if ($allowed && $this->request->getMethod() === 'POST') {
-            $sent = $this->submit_request($customer, $order, $items, true);
-        }
+        [$sent, $message] = $allowed && $this->request->getMethod() === 'POST'
+            ? $this->submit_request($customer, $order, $items, true)
+            : [false, ''];
 
         return $this->render('Modules\Members\Views\item_request', [
             'page_meta' => ['title' => ($type === 'cancel' ? 'Cancel' : 'Return') . ' Item | CustomCart', 'lookup' => false],
             'is_frame'  => true,
-            'body_attrs' => $sent !== '' && ! str_starts_with($sent, '!') ? ['data-kt-sent' => $sent] : [],
+            'body_attrs' => $sent ? ['data-kt-sent' => $message] : [],
             'order'     => $order,
             'item'      => $item,
             'type'      => $type,
             'allowed'   => $allowed,
-            'error'     => str_starts_with($sent, '!') ? substr($sent, 1) : '',
+            'error'     => $sent ? '' : $message,
             'reasons'   => $this->reasons->active_names($type),
         ]);
     }

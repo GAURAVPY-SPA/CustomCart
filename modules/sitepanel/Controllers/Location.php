@@ -63,7 +63,8 @@ class Location extends AdminController
 
     public function index(): string
     {
-        [$keyword, $status] = $this->filters('get');
+        $keyword = $this->keyword_param();
+        $status  = $this->status_param((string) $this->request->getGet('status'));
         $page = $this->current_page();
         $res  = $this->country_model->get_countries(($page - 1) * self::PAGESIZE, self::PAGESIZE, $keyword, $status);
 
@@ -144,8 +145,7 @@ class Location extends AdminController
 
     public function bulk(): void
     {
-        [$keyword, $status] = $this->filters('post');
-        $this->process_bulk_action($this->country_model, 'get_countries_by_ids', 'Country', array_filter(['keyword' => $keyword, 'status' => $status]));
+        $this->process_bulk_action($this->country_model, 'get_countries_by_ids', 'Country', $this->list_query());
     }
 
     /* ---------------------------------------------------------------
@@ -160,7 +160,8 @@ class Location extends AdminController
         $country = $this->record_or_back($this->country_model->get_country_by_id($country_id));
         $this->for_states($country);
 
-        [$keyword, $status] = $this->filters('get');
+        $keyword = $this->keyword_param();
+        $status  = $this->status_param((string) $this->request->getGet('status'));
         $page = $this->current_page();
         $res  = $this->state_model->get_states((int) $country['country_id'], ($page - 1) * self::PAGESIZE, self::PAGESIZE, $keyword, $status);
 
@@ -262,8 +263,7 @@ class Location extends AdminController
         $this->require_post();
         $country = $this->record_or_back($this->country_model->get_country_by_id($country_id));
         $this->for_states($country);
-        [$keyword, $status] = $this->filters('post');
-        $this->process_bulk_action($this->state_model, 'get_states_by_ids', 'State', array_filter(['keyword' => $keyword, 'status' => $status]));
+        $this->process_bulk_action($this->state_model, 'get_states_by_ids', 'State', $this->list_query());
     }
 
     /* ---------------------------------------------------------------
@@ -278,7 +278,8 @@ class Location extends AdminController
         [$state, $country] = $this->state_and_country($state_id);
         $this->for_cities($state);
 
-        [$keyword, $status] = $this->filters('get');
+        $keyword = $this->keyword_param();
+        $status  = $this->status_param((string) $this->request->getGet('status'));
         $page = $this->current_page();
         $res  = $this->city_model->get_cities((int) $state['state_id'], ($page - 1) * self::PAGESIZE, self::PAGESIZE, $keyword, $status);
 
@@ -381,8 +382,7 @@ class Location extends AdminController
         $this->require_post();
         [$state] = $this->state_and_country($state_id);
         $this->for_cities($state);
-        [$keyword, $status] = $this->filters('post');
-        $this->process_bulk_action($this->city_model, 'get_cities_by_ids', 'City', array_filter(['keyword' => $keyword, 'status' => $status]));
+        $this->process_bulk_action($this->city_model, 'get_cities_by_ids', 'City', $this->list_query());
     }
 
     /* ---------------------------------------------------------------
@@ -471,17 +471,6 @@ class Location extends AdminController
         return $last === null
             ? $crumbs + [$state['state_name'] => null]
             : $crumbs + [$state['state_name'] => site_url('sitepanel/location/cities/' . (int) $state['state_id']), $last => null];
-    }
-
-    /**
-     * [keyword, status] from the list query (get) or the posted list filters (post).
-     */
-    protected function filters(string $from): array
-    {
-        $keyword = $from === 'get' ? $this->request->getGet('keyword') : $this->request->getPost('keyword');
-        $status  = (string) ($from === 'get' ? $this->request->getGet('status') : $this->request->getPost('status_filter'));
-
-        return [mb_substr(trim((string) $keyword), 0, 80), in_array($status, ['1', '0'], true) ? $status : ''];
     }
 
     /**

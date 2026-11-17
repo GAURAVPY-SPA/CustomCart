@@ -65,7 +65,6 @@ class Theme extends AdminController
         $posted_gradients = []; // card gradients as entered, shown again after an error
 
         if ($this->request->getMethod() === 'POST') {
-            $this->require_post();
             if (! $this->can(AdminAccess::PRIV_EDIT)) {
                 $this->session->setFlashdata('sitepanel_error', "You don't have permission to change the theme.");
                 redirect_now($this->base);
@@ -74,49 +73,9 @@ class Theme extends AdminController
             if ($this->request->getPost('form') === 'stat_gradients') {
                 [$errors, $posted_gradients] = $this->save_gradients();
             } elseif ($this->request->getPost('form') === 'custom_colors') {
-                $input  = (array) $this->request->getPost('colors');
-                $values = [];
-
-                foreach ($this->custom_colors as $group => $fields) {
-                    foreach ($fields as $name => $label) {
-                        $posted[$name] = isset($input[$name]) ? trim((string) $input[$name]) : '';
-                        if (preg_match(SitepanelTheme::HEX_COLOR, $posted[$name])) {
-                            $values[SitepanelTheme::SETTING_PREFIX . $name] = strtolower($posted[$name]);
-                        } else {
-                            $errors[] = ($name === self::CARD_BG ? $label : $group . ' — ' . $label) . ': enter a hex color, e.g. #ffffff.';
-                        }
-                    }
-                }
-
-                if (! $errors) {
-                    if ($this->settings_model->save($values, $this->admin['admin_id'])) {
-                        $this->site_settings->refresh();
-                        $this->session->setFlashdata('sitepanel_success', 'Custom colors saved.');
-                        redirect_now($this->base);
-                    }
-                    $errors[] = 'The custom colors could not be saved. Please try again.';
-                }
+                [$errors, $posted] = $this->save_custom_colors();
             } else {
-                $theme_id = (string) $this->request->getPost('theme_id');
-                $colors   = $this->sitepanel_theme->preset_colors($theme_id);
-                if ($colors === false || ! isset($presets[$theme_id])) {
-                    $errors[] = 'Choose one of the available themes before applying it.';
-                } else {
-                    $values = [];
-
-                    foreach ($colors as $name => $value) {
-                        $values['sp_theme_' . $name] = $value;
-                    }
-                    $values['sp_active_theme'] = $theme_id;
-
-                    if ($this->settings_model->save($values, $this->admin['admin_id'])) {
-                        $this->site_settings->refresh();
-                        $this->session->setFlashdata('sitepanel_success', $presets[$theme_id]['name'] . ' applied.');
-                        redirect_now($this->base);
-                    }
-
-                    $errors[] = 'The theme could not be saved. Your current colors have not been intentionally changed; please try again.';
-                }
+                $errors = $this->apply_preset($presets);
             }
         }
 
@@ -164,6 +123,74 @@ class Theme extends AdminController
             'angles'          => SitepanelTheme::GRADIENT_ANGLES,
             'can_edit'        => $this->can(AdminAccess::PRIV_EDIT),
         ]);
+    }
+
+    /**
+     * Save the "Custom colors" form (only the sp_theme_* rows of
+     * $custom_colors). Redirects on success.
+     *
+     * @return array{0: list<string>, 1: array} errors, colours as entered (name => value)
+     */
+    protected function save_custom_colors(): array
+    {
+        $input  = (array) $this->request->getPost('colors');
+        $errors = [];
+        $posted = [];
+        $values = [];
+
+        foreach ($this->custom_colors as $group => $fields) {
+            foreach ($fields as $name => $label) {
+                $posted[$name] = isset($input[$name]) ? trim((string) $input[$name]) : '';
+                if (preg_match(SitepanelTheme::HEX_COLOR, $posted[$name])) {
+                    $values[SitepanelTheme::SETTING_PREFIX . $name] = strtolower($posted[$name]);
+                } else {
+                    $errors[] = ($name === self::CARD_BG ? $label : $group . ' — ' . $label) . ': enter a hex color, e.g. #ffffff.';
+                }
+            }
+        }
+
+        if (! $errors) {
+            if ($this->settings_model->save($values, $this->admin['admin_id'])) {
+                $this->site_settings->refresh();
+                $this->session->setFlashdata('sitepanel_success', 'Custom colors saved.');
+                redirect_now($this->base);
+            }
+            $errors[] = 'The custom colors could not be saved. Please try again.';
+        }
+
+        return [$errors, $posted];
+    }
+
+    /**
+     * Apply the posted preset (theme_id): all its colours and sp_active_theme.
+     * Redirects on success.
+     *
+     * @param array $presets Config\Sitepanel::$themePresets
+     *
+     * @return list<string> Errors
+     */
+    protected function apply_preset(array $presets): array
+    {
+        $theme_id = (string) $this->request->getPost('theme_id');
+        $colors   = $this->sitepanel_theme->preset_colors($theme_id);
+        if ($colors === false || ! isset($presets[$theme_id])) {
+            return ['Choose one of the available themes before applying it.'];
+        }
+
+        $values = [];
+
+        foreach ($colors as $name => $value) {
+            $values[SitepanelTheme::SETTING_PREFIX . $name] = $value;
+        }
+        $values['sp_active_theme'] = $theme_id;
+
+        if ($this->settings_model->save($values, $this->admin['admin_id'])) {
+            $this->site_settings->refresh();
+            $this->session->setFlashdata('sitepanel_success', $presets[$theme_id]['name'] . ' applied.');
+            redirect_now($this->base);
+        }
+
+        return ['The theme could not be saved. Your current colors have not been intentionally changed; please try again.'];
     }
 
     /**

@@ -132,7 +132,8 @@ class HeaderImages extends AdminController
     public function bulk(): void
     {
         $status = $this->status_param((string) $this->request->getPost('status_filter'));
-        $this->process_bulk_action($this->header_images_model, 'get_header_images_by_ids', 'Header image', array_filter(['status' => $status]), 'header_image', self::IMAGE_FOLDER);
+        $query  = $status !== '' ? ['status' => $status] : []; // keeps the Inactive ('0') filter
+        $this->process_bulk_action($this->header_images_model, 'get_header_images_by_ids', 'Header image', $query, 'header_image', self::IMAGE_FOLDER);
     }
 
     /**
@@ -205,10 +206,5 @@ class HeaderImages extends AdminController
         }
 
         return [];
-    }
-
-    protected function status_param(string $value): string
-    {
-        return in_array($value, ['1', '0'], true) ? $value : '';
     }
 }

@@ -3,7 +3,6 @@
 namespace Modules\Sitepanel\Controllers;
 
 use App\Controllers\AdminController;
-use DateTime;
 use Modules\Cart\Models\OrderModel;
 use Modules\Sitepanel\Libraries\AdminAccess;
 
@@ -52,8 +51,7 @@ class OrderProducts extends AdminController
         $data['filters']       = $filters;
         $data['statuses']      = Orders::ITEM_STATUSES;
         // Opening an order needs the Manage Orders section.
-        $codes                 = $this->admin_access->permissions_for($this->admin, 'orders');
-        $data['can_orders']    = is_array($codes) && in_array(AdminAccess::PRIV_VIEW, $codes, true);
+        $data['can_orders']    = $this->can_open_section('orders');
 
         return $this->render('store/orders/order_products_list', $data);
     }
@@ -109,15 +107,14 @@ class OrderProducts extends AdminController
         $input  = $input ?? [];
         $date   = static function ($value): string {
             $value = trim((string) $value);
-            $time  = DateTime::createFromFormat('!Y-m-d', $value);
 
-            return $time && $time->format('Y-m-d') === $value ? $value : '';
+            return sp_valid_date($value) ? $value : '';
         };
         $status  = (string) ($input['item_status'] ?? '');
         $request = (string) ($input['request'] ?? '');
 
         return [
-            'keyword'     => mb_substr(trim((string) ($input['keyword'] ?? '')), 0, 80),
+            'keyword'     => $this->keyword_param((string) ($input['keyword'] ?? '')),
             'item_status' => in_array($status, Orders::ITEM_STATUSES, true) ? $status : '',
             'request'     => in_array($request, ['cancel', 'return'], true) ? $request : '',
             'from_date'   => $date($input['from_date'] ?? ''),

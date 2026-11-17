@@ -6,12 +6,14 @@ use App\Controllers\AdminController;
 use App\Libraries\FormValidation;
 use Modules\Sitepanel\Libraries\AdminPasswordPolicy;
 use Modules\Sitepanel\Models\AdminModel;
+use Modules\Sitepanel\Models\AdminPasswordResetModel;
 
 /**
  * Sitepanel > Change Password: the signed-in administrator changes their own
  * password. The current password is verified first (AdminAuth::check_password());
  * the new one is stored as its password_hash() value in tbl_admin.password_hash
- * (any legacy plain-text admin_password is cleared). A forgotten password is
+ * (any legacy plain-text admin_password is cleared), and unused password reset
+ * links of the administrator expire. A forgotten password is
  * reset from the login page's "Forgot password?" link (ForgotPassword) or with
  * php spark admin:reset-password (docs/SITEPANEL_ADMIN_PASSWORDS.md).
  *
@@ -85,9 +87,12 @@ class ChangePassword extends AdminController
             return ['The current password is incorrect.'];
         }
 
-        if (! (new AdminModel())->update_password_hash((int) $this->admin['admin_id'], password_hash($new, PASSWORD_DEFAULT))) {
+        $admin_id = (int) $this->admin['admin_id'];
+        if (! (new AdminModel())->update_password_hash($admin_id, password_hash($new, PASSWORD_DEFAULT))) {
             return ['Your password could not be changed. Please try again.'];
         }
+        // Password reset links already emailed ("Forgot password?") stop working.
+        (new AdminPasswordResetModel())->expire_unused($admin_id);
 
         return [];
     }

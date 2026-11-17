@@ -6,7 +6,6 @@ use App\Controllers\AdminController;
 use App\Libraries\FormValidation;
 use App\Libraries\HtmlSanitizer;
 use App\Libraries\ImageUpload;
-use DateTime;
 use Modules\News\Controllers\News as NewsPage;
 use Modules\News\Models\NewsModel;
 use Modules\Sitepanel\Libraries\AdminAccess;
@@ -54,13 +53,15 @@ class News extends AdminController
     protected function init(): void
     {
         $this->news_model   = new NewsModel();
+        // Deleting an item also deletes its page address, in one transaction.
+        $this->news_model->meta_type = NewsPage::META_TYPE;
         $this->meta_model   = new MetaModel();
         $this->image_upload = new ImageUpload();
     }
 
     public function index(): string
     {
-        $keyword = mb_substr(trim((string) $this->request->getGet('keyword')), 0, 80);
+        $keyword = $this->keyword_param();
         $status  = $this->status_param((string) $this->request->getGet('status'));
         $page    = $this->current_page();
         $res     = $this->news_model->get_news(($page - 1) * self::PAGESIZE, self::PAGESIZE, $keyword, $status);
@@ -151,35 +152,25 @@ class News extends AdminController
         $this->require_privilege(AdminAccess::PRIV_DELETE);
         $row = $this->record_or_back($this->news_model->get_news_by_id($id));
 
-        if (! $this->meta_model->delete_entity_meta(NewsPage::META_TYPE, $row['news_id'])) {
-            $this->session->setFlashdata('sitepanel_error', 'The item\'s page address could not be removed, so the item was not deleted. Please try again.');
-            $this->back($this->list_query());
+        // The item and its wl_meta_tags row (its page address) go together or not at all.
+        if ($this->news_model->bulk_delete([(int) $row['news_id']])) {
+            $this->image_upload->delete(NewsPage::IMAGE_FOLDER, $row['news_image']);
+            $this->session->setFlashdata('sitepanel_success', $this->item . ' deleted.');
+        } else {
+            $this->session->setFlashdata('sitepanel_error', $this->item . ' could not be deleted. Please try again.');
         }
 
-        $this->delete_record(NewsModel::TABLE, NewsModel::PRIMARY_KEY, $id, 'news_image', NewsPage::IMAGE_FOLDER);
+        $this->back();
     }
 
     /**
-     * POST: activate / deactivate / delete the selected items. As in delete(),
-     * each one's wl_meta_tags row is removed first.
+     * POST: activate / deactivate / delete the selected items. Deleting
+     * removes each item's wl_meta_tags row in the same transaction
+     * (NewsModel::bulk_delete()).
      */
     public function bulk(): void
     {
-        $query = $this->list_query();
-
-        if ($this->request->getPost('bulk_action') !== 'delete') {
-            $this->process_bulk_action($this->news_model, 'get_news_by_ids', 'News item', $query);
-        }
-
-        $this->bulk_delete_checked($this->news_model, 'get_news_by_ids', 'News item', $query, function (array $rows) {
-            foreach ($rows as $row) {
-                if (! $this->meta_model->delete_entity_meta(NewsPage::META_TYPE, $row['news_id'])) {
-                    return 'The page address of "' . $row['news_title'] . '" could not be removed, so nothing was deleted. Please try again.';
-                }
-            }
-
-            return null;
-        }, 'news_image', NewsPage::IMAGE_FOLDER);
+        $this->process_bulk_action($this->news_model, 'get_news_by_ids', 'News item', $this->list_query(), 'news_image', NewsPage::IMAGE_FOLDER);
     }
 
     /**
@@ -187,40 +178,7 @@ class News extends AdminController
      */
     public function sort(): void
     {
-        $this->require_post();
-        $this->require_privilege(AdminAccess::PRIV_EDIT);
-        $query = $this->list_query();
-
-        $posted = $this->request->getPost('ord');
-        $orders = [];
-        $valid  = is_array($posted) && $posted && count($posted) <= self::PAGESIZE;
-
-        if ($valid) {
-            foreach ($posted as $id => $order) {
-                $order = is_string($order) ? trim($order) : '';
-                if (! preg_match('/^[1-9][0-9]*$/D', (string) $id) || ! preg_match('/^[0-9]{1,4}$/D', $order)) {
-                    $valid = false;
-                    break;
-                }
-                $orders[(int) $id] = (int) $order;
-            }
-        }
-        if (! $valid) {
-            $this->session->setFlashdata('sitepanel_error', 'Enter a display order from 0 to 9999 for each item.');
-            $this->back($query);
-        }
-
-        $ids = array_keys($orders);
-        if (! $this->selected_rows_match($this->news_model->get_news_by_ids($ids), $ids)) {
-            $this->back($query);
-        }
-
-        if ($this->news_model->update_sort_orders($orders)) {
-            $this->session->setFlashdata('sitepanel_success', 'Display order updated.');
-        } else {
-            $this->session->setFlashdata('sitepanel_error', 'Display order could not be updated. Please try again.');
-        }
-        $this->back($query);
+        $this->save_display_order($this->news_model, 'get_news_by_ids', 'item');
     }
 
     /**
@@ -250,7 +208,7 @@ class News extends AdminController
         $v->set_rules(
             'publish_date',
             'Publication date',
-            ['trim', 'required', ['valid_day', static fn ($value) => self::valid_date((string) $value)]],
+            ['trim', 'required', ['valid_day', static fn ($value) => sp_valid_date((string) $value)]],
             ['valid_day' => 'Enter the {field} as a date.'],
         );
         $v->set_rules('short_description', 'Short description', 'trim|max_length[500]');
@@ -357,28 +315,5 @@ class News extends AdminController
         $route = $this->meta_model->get_route_of(NewsPage::INDEX_TYPE);
 
         return is_array($route) ? (string) $route['page_url'] : '';
-    }
-
-    public static function valid_date(string $value): bool
-    {
-        $date = DateTime::createFromFormat('!Y-m-d', $value);
-
-        return $date !== false && $date->format('Y-m-d') === $value;
-    }
-
-    /**
-     * List filters to return to after an action (posted with it).
-     */
-    protected function list_query(): array
-    {
-        $keyword = mb_substr(trim((string) $this->request->getPost('keyword')), 0, 80);
-        $status  = $this->status_param((string) $this->request->getPost('status_filter'));
-
-        return array_filter(['keyword' => $keyword, 'status' => $status], static fn ($v) => $v !== '');
-    }
-
-    protected function status_param(string $value): string
-    {
-        return in_array($value, ['1', '0'], true) ? $value : '';
     }
 }

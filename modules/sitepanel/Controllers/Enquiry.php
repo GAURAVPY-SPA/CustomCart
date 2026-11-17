@@ -5,7 +5,6 @@ namespace Modules\Sitepanel\Controllers;
 use App\Controllers\AdminController;
 use App\Libraries\FormValidation;
 use App\Libraries\HtmlSanitizer;
-use DateTime;
 use Modules\Sitepanel\Libraries\AdminAccess;
 use Modules\Sitepanel\Libraries\EnquiryMailer;
 use Modules\Sitepanel\Models\EnquiryModel;
@@ -72,7 +71,7 @@ class Enquiry extends AdminController
     public function index(): string
     {
         $condition = [
-            'keyword' => mb_substr(trim((string) $this->request->getGet('keyword')), 0, 80),
+            'keyword' => $this->keyword_param(),
             'from'    => $this->date_param('from'),
             'to'      => $this->date_param('to'),
             'replied' => (string) $this->request->getGet('replied'),
@@ -148,19 +147,13 @@ class Enquiry extends AdminController
 
     public function bulk(): string
     {
-        $keyword = mb_substr(trim((string) $this->request->getPost('keyword')), 0, 80);
-        $from    = $this->valid_date((string) $this->request->getPost('from'));
-        $to      = $this->valid_date((string) $this->request->getPost('to'));
-        $replied = (string) $this->request->getPost('replied');
-        $replied = in_array($replied, ['Y', 'N'], true) ? $replied : '';
+        $filters = $this->posted_filters();
 
         if ($this->request->getPost('bulk_action') === 'send_email') {
-            return $this->start_mail($this->selected_ids(), ['keyword' => $keyword, 'from' => $from, 'to' => $to, 'replied' => $replied]);
+            return $this->start_mail($this->selected_ids(), $filters);
         }
 
-        $this->process_bulk_action($this->enquiry_model, 'get_enquiries_by_ids', 'Enquiry', [
-            'keyword' => $keyword, 'from' => $from, 'to' => $to, 'replied' => $replied,
-        ]);
+        $this->process_bulk_action($this->enquiry_model, 'get_enquiries_by_ids', 'Enquiry', $filters);
     }
 
     /**
@@ -172,12 +165,7 @@ class Enquiry extends AdminController
     {
         $id = (string) $id;
 
-        return $this->start_mail(preg_match('/^[1-9][0-9]{0,9}$/D', $id) ? [(int) $id] : false, [
-            'keyword' => mb_substr(trim((string) $this->request->getPost('keyword')), 0, 80),
-            'from'    => $this->valid_date((string) $this->request->getPost('from')),
-            'to'      => $this->valid_date((string) $this->request->getPost('to')),
-            'replied' => in_array($this->request->getPost('replied'), ['Y', 'N'], true) ? $this->request->getPost('replied') : '',
-        ]);
+        return $this->start_mail(preg_match('/^[1-9][0-9]{0,9}$/D', $id) ? [(int) $id] : false, $this->posted_filters());
     }
 
     public function preview_mail(): string
@@ -395,6 +383,24 @@ class Enquiry extends AdminController
     }
 
     /**
+     * The list filters posted with an action (keyword, from, to, replied),
+     * validated; empty values are kept.
+     *
+     * @return array{keyword: string, from: string, to: string, replied: string}
+     */
+    protected function posted_filters(): array
+    {
+        $replied = (string) $this->request->getPost('replied');
+
+        return [
+            'keyword' => $this->keyword_param((string) $this->request->getPost('keyword')),
+            'from'    => $this->valid_date((string) $this->request->getPost('from')),
+            'to'      => $this->valid_date((string) $this->request->getPost('to')),
+            'replied' => in_array($replied, ['Y', 'N'], true) ? $replied : '',
+        ];
+    }
+
+    /**
      * @param string $name GET parameter
      *
      * @return string Valid Y-m-d date or ''
@@ -409,8 +415,6 @@ class Enquiry extends AdminController
      */
     protected function valid_date(string $value): string
     {
-        $date = DateTime::createFromFormat('!Y-m-d', $value);
-
-        return ($date && $date->format('Y-m-d') === $value) ? $value : '';
+        return sp_valid_date($value) ? $value : '';
     }
 }

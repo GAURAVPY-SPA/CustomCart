@@ -3,6 +3,7 @@
 namespace Modules\News\Models;
 
 use App\Models\BaseModel;
+use Throwable;
 
 /**
  * News & Events (wl_news) — the website's /news-and-events page,
@@ -20,6 +21,13 @@ class NewsModel extends BaseModel
     public const PRIMARY_KEY = 'news_id';
 
     protected const ORDER = 'sort_order ASC, publish_date DESC, news_id DESC';
+
+    /**
+     * entity_type of the items' wl_meta_tags rows (News::META_TYPE). Set by
+     * Sitepanel > Manage News & Events so bulk_delete() removes each item's
+     * page address together with the item; '' = the items only.
+     */
+    public string $meta_type = '';
 
     /**
      * One Sitepanel list page; the total is left in $this->total_rec_found.
@@ -110,10 +118,36 @@ class NewsModel extends BaseModel
     }
 
     /**
+     * Delete items. With $meta_type set, their wl_meta_tags rows are deleted
+     * in the same transaction: both go, or nothing changes.
+     *
      * @param list<int> $ids
      */
     public function bulk_delete(array $ids): bool
     {
-        return $this->safe_delete_many(self::TABLE, self::PRIMARY_KEY, $ids);
+        if ($this->meta_type === '') {
+            return $this->safe_delete_many(self::TABLE, self::PRIMARY_KEY, $ids);
+        }
+
+        $ids = array_values(array_filter(array_map('intval', $ids), static fn ($n) => $n > 0));
+        if (! $ids || ! $this->db_ready()) {
+            return false;
+        }
+
+        try {
+            $this->db->transException(true)->transStart();
+            $this->table('wl_meta_tags')->where('entity_type', $this->meta_type)->whereIn('entity_id', $ids)->delete();
+            $this->table(self::TABLE)->whereIn(self::PRIMARY_KEY, $ids)->delete();
+            $this->db->transComplete();
+        } catch (Throwable $e) {
+            $this->db->transRollback();
+            log_message('error', 'NewsModel::bulk_delete(' . implode(',', $ids) . '): ' . $e->getMessage());
+
+            return false;
+        } finally {
+            $this->db->transException(false);
+        }
+
+        return true;
     }
 }

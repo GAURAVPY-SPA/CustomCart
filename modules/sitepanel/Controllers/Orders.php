@@ -4,7 +4,6 @@ namespace Modules\Sitepanel\Controllers;
 
 use App\Controllers\AdminController;
 use App\Libraries\FormValidation;
-use DateTime;
 use Modules\Cart\Libraries\OrderMailer;
 use Modules\Cart\Models\OrderModel;
 use Modules\Sitepanel\Libraries\AdminAccess;
@@ -190,7 +189,7 @@ class Orders extends AdminController
         $v = new FormValidation($this->request, $this);
         $v->set_rules('courier_company_name', 'Courier company', 'trim|required|max_length[150]');
         $v->set_rules('bill_number', 'Tracking number', 'trim|required|max_length[50]');
-        $v->set_rules('bill_url', 'Tracking link', ['trim', 'max_length[455]', ['valid_tracking_url', static fn ($value) => (string) $value === '' || (filter_var((string) $value, FILTER_VALIDATE_URL) && preg_match('#^https?://#i', (string) $value))]],
+        $v->set_rules('bill_url', 'Tracking link', ['trim', 'max_length[455]', ['valid_tracking_url', 'sp_is_web_url']],
             ['valid_tracking_url' => 'The {field} must be a web address starting with http:// or https://.']);
 
         if (! $v->run()) {
@@ -338,6 +337,7 @@ class Orders extends AdminController
             $this->back($query);
         }
 
+        // OrderModel::bulk_update_status() sets the PAYMENT status (payment_status), not the order status.
         $done = $action === 'delete' ? $this->order_model->bulk_delete($ids) : $this->order_model->bulk_update_status($ids, $action === 'paid' ? '1' : '0');
         $count = count($ids);
         $verb  = ['paid' => 'marked Paid', 'unpaid' => 'marked Unpaid', 'delete' => 'deleted'][$action];
@@ -360,14 +360,10 @@ class Orders extends AdminController
     {
         $input = is_array($input) ? $input : [];
         $get   = static fn (string $key) => is_string($input[$key] ?? null) ? trim($input[$key]) : '';
-        $date  = static function (string $value): string {
-            $date = DateTime::createFromFormat('!Y-m-d', $value);
-
-            return $date && $date->format('Y-m-d') === $value ? $value : '';
-        };
+        $date  = static fn (string $value): string => sp_valid_date($value) ? $value : '';
 
         return [
-            'keyword'        => mb_substr($get('keyword'), 0, 80),
+            'keyword'        => $this->keyword_param($get('keyword')),
             'order_status'   => in_array($get('order_status'), self::FILTER_STATUSES, true) ? $get('order_status') : '',
             'payment_status' => in_array($get('payment_status'), self::PAYMENT_STATUSES, true) ? $get('payment_status') : '',
             'from_date'      => $date($get('from_date')),

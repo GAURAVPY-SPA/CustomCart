@@ -6,9 +6,11 @@ use App\Controllers\PublicController;
 use App\Libraries\FormValidation;
 use Config\Shop;
 use Modules\Cart\Libraries\DeliveryAddress;
+use Modules\Cart\Libraries\OrderMailer;
 use Modules\Cart\Libraries\ShopCart;
 use Modules\Cart\Models\OrderModel;
 use Modules\Members\Models\AddressModel;
+use Modules\Sitepanel\Models\NewsletterModel;
 use Modules\Users\Libraries\CustomerAuth;
 use Modules\Users\Models\CustomerModel;
 
@@ -305,7 +307,7 @@ class Cart extends PublicController
             DeliveryAddress::rules($v, $values);
 
             if ($v->run()) {
-                [$first, $last] = array_pad(preg_split('/\s+/u', $values['full_name'], 2), 2, '');
+                [$first, $last] = split_name($values['full_name']);
                 $this->save_checkout('customer', ['email' => strtolower($values['email']), 'phone' => DeliveryAddress::digits($values['contact_mobile']),
                     'first_name' => mb_substr($first, 0, 50), 'last_name' => mb_substr($last, 0, 50), 'newsletter' => $values['newsletter']]);
                 $this->save_checkout('delivery', array_intersect_key($values, array_flip(DeliveryAddress::FIELDS)));
@@ -486,15 +488,16 @@ class Cart extends PublicController
         if ($member && ! (new AddressModel())->get_default_address((int) $member['customers_id'])) {
             (new AddressModel())->save_default_address((int) $member['customers_id'], DeliveryAddress::to_book($delivery));
         }
-        if (($info['newsletter'] ?? '') === '1') {
-            $this->subscribe_newsletter($order['email'], trim($info['first_name'] . ' ' . $info['last_name']));
+        // Newsletter (wl_newsletters) unless already subscribed; a failure does not affect the order.
+        if (($info['newsletter'] ?? '') === '1' && (new NewsletterModel())->subscribe($order['email'], trim($info['first_name'] . ' ' . $info['last_name'])) === false) {
+            log_message('error', 'Cart::place_order could not save the newsletter subscription of ' . $placed['invoice_number'] . '.');
         }
 
         $saved = $orders->get_order_by_id($placed['order_id']);
         $items = is_array($saved) ? $orders->get_items($placed['order_id']) : false;
-        if (is_array($saved) && is_array($items) && class_exists('Modules\Cart\Libraries\OrderMailer')) {
+        if (is_array($saved) && is_array($items)) {
             try {
-                (new \Modules\Cart\Libraries\OrderMailer())->placed($saved, $items);
+                (new OrderMailer())->placed($saved, $items);
             } catch (\Throwable $e) {
                 log_message('error', 'Cart::place_order: confirmation email of ' . $placed['invoice_number'] . ' failed: ' . $e->getMessage());
             }
@@ -662,24 +665,6 @@ class Cart extends PublicController
         $data       = $this->checkout_data();
         $data[$key] = $value;
         session()->set(self::CHECKOUT_KEY, $data);
-    }
-
-    /**
-     * Add the email to the newsletter list (wl_newsletters) unless it is already there.
-     */
-    protected function subscribe_newsletter(string $email, string $name): void
-    {
-        try {
-            $db = \Config\Database::connect();
-            if ($db->table('wl_newsletters')->where('subscriber_email', $email)->countAllResults() === 0) {
-                $db->table('wl_newsletters')->insert([
-                    'subscriber_name' => mb_substr($name, 0, 32), 'subscriber_email' => mb_substr($email, 0, 80),
-                    'status' => '1', 'subscribe_date' => date('Y-m-d H:i:s'),
-                ]);
-            }
-        } catch (\Throwable $e) {
-            log_message('error', 'Cart::subscribe_newsletter: ' . $e->getMessage());
-        }
     }
 
     /**

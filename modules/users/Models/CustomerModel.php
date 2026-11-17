@@ -299,32 +299,6 @@ class CustomerModel extends BaseModel
     }
 
     /**
-     * Add the email to the newsletter list (wl_newsletters, Sitepanel >
-     * Newsletter Management) unless it is already there, as the reference's
-     * registration did.
-     *
-     * @return bool|null TRUE added, NULL already subscribed, FALSE failed
-     */
-    public function subscribe_newsletter(string $email, string $name): ?bool
-    {
-        $email = strtolower(trim($email));
-        $count = $this->findCount('wl_newsletters', ['subscriber_email' => $email]);
-        if ($count === false) {
-            return false;
-        }
-        if ($count > 0) {
-            return null;
-        }
-
-        return $this->safe_insert('wl_newsletters', [
-            'subscriber_name'  => mb_substr($name, 0, 32),
-            'subscriber_email' => $email,
-            'status'           => '1',
-            'subscribe_date'   => date('Y-m-d H:i:s'),
-        ]) !== false;
-    }
-
-    /**
      * Ids among $ids that have orders (they can't be deleted: deactivate them instead).
      *
      * @param list<int> $ids

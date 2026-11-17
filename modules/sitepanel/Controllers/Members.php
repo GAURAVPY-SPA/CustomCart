@@ -47,7 +47,7 @@ class Members extends AdminController
 
     public function index(): string
     {
-        $keyword = mb_substr(trim((string) $this->request->getGet('keyword')), 0, 80);
+        $keyword = $this->keyword_param();
         $status  = $this->status_param((string) $this->request->getGet('status'));
         $page    = $this->current_page();
         $res     = $this->customer_model->get_customers(($page - 1) * self::PAGESIZE, self::PAGESIZE, $keyword, $status);
@@ -60,7 +60,7 @@ class Members extends AdminController
         $data['page_links']    = admin_pagination($this->base, $data['total'], self::PAGESIZE);
         $data['keyword']       = $keyword;
         $data['status']        = $status;
-        $data['can_orders']    = $this->can_open('orders');
+        $data['can_orders']    = $this->can_open_section('orders');
 
         return $this->render('store/members/member_list', $data);
     }
@@ -79,7 +79,7 @@ class Members extends AdminController
         $data['address']       = (new AddressModel())->get_default_address((int) $res['customers_id']);
         $data['orders']        = $orders->get_orders(0, 10, ['customer_id' => (int) $res['customers_id']]);
         $data['order_total']   = $orders->total_rec_found;
-        $data['can_orders']    = $this->can_open('orders');
+        $data['can_orders']    = $this->can_open_section('orders');
 
         return $this->render('store/members/member_view', $data);
     }
@@ -121,7 +121,7 @@ class Members extends AdminController
 
     public function bulk(): void
     {
-        $keyword = mb_substr(trim((string) $this->request->getPost('keyword')), 0, 80);
+        $keyword = $this->keyword_param((string) $this->request->getPost('keyword'));
         $status  = $this->status_param((string) $this->request->getPost('status_filter'));
         $query   = array_filter(['keyword' => $keyword, 'status' => $status], 'strlen');
         $action  = (string) $this->request->getPost('bulk_action');
@@ -165,15 +165,6 @@ class Members extends AdminController
         return null;
     }
 
-    /**
-     * Whether the admin may open another sitepanel section (links to orders).
-     */
-    protected function can_open(string $section): bool
-    {
-        $codes = $this->admin_access->permissions_for($this->admin, $section);
-
-        return is_array($codes) && in_array(AdminAccess::PRIV_VIEW, $codes, true);
-    }
 
     protected function status_param(string $value): string
     {

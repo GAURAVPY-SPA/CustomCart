@@ -56,7 +56,7 @@ abstract class StoreLookup extends AdminController
 
     public function index(): string
     {
-        $keyword = mb_substr(trim((string) $this->request->getGet('keyword')), 0, 80);
+        $keyword = $this->keyword_param();
         $status  = $this->status_param((string) $this->request->getGet('status'));
         $page    = $this->current_page();
         $res     = $this->model->get_list(($page - 1) * self::PAGESIZE, self::PAGESIZE, $keyword, $status);
@@ -159,10 +159,7 @@ abstract class StoreLookup extends AdminController
 
     public function bulk(): void
     {
-        $query = array_filter([
-            'keyword' => mb_substr(trim((string) $this->request->getPost('keyword')), 0, 80),
-            'status'  => $this->status_param((string) $this->request->getPost('status_filter')),
-        ], 'strlen');
+        $query = $this->list_query();
 
         if ($this->request->getPost('bulk_action') !== 'delete') {
             $this->process_bulk_action($this->model, 'get_by_ids', $this->item, $query);
@@ -279,10 +276,5 @@ abstract class StoreLookup extends AdminController
             'pk'        => $this->model::PRIMARY_KEY,
             'name_key'  => $this->model::NAME_FIELD,
         ];
-    }
-
-    protected function status_param(string $value): string
-    {
-        return in_array($value, ['1', '0'], true) ? $value : '';
     }
 }

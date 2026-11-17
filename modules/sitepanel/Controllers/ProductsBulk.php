@@ -497,7 +497,7 @@ class ProductsBulk extends AdminController
                 $taken = $this->product_model->code_taken($code);
                 $plan  = $taken === null ? 'Could not be checked; try again.' : ($taken ? 'Product code already exists; skipped.' : $plan);
             }
-            $slug = is_array($plan) ? $this->free_slug($name) : null;
+            $slug = is_array($plan) ? Products::free_slug($this->product_model, $this->meta_model, $name) : null;
             if (is_array($plan) && ! is_string($slug)) {
                 $plan = $slug === false ? 'The URL slug could not be checked; try again.' : 'The product name needs at least one letter or number.';
             }
@@ -850,35 +850,5 @@ class ProductsBulk extends AdminController
     protected function lookup_id(string $value, array $lookup): ?int
     {
         return $lookup['names'][$this->lookup_key($value)] ?? (ctype_digit($value) && isset($lookup['ids'][(int) $value]) ? (int) $value : null);
-    }
-
-    /**
-     * An address slug from the name that no product (or other page) uses yet,
-     * as Manage Products makes it: '' when the name has no letters or digits,
-     * FALSE when it could not be checked.
-     *
-     * @return false|string
-     */
-    protected function free_slug(string $name)
-    {
-        $base = sp_page_slug($name, Products::SLUG_MAX);
-        if ($base === '') {
-            return '';
-        }
-
-        for ($n = 1; $n <= 1000; $n++) {
-            $suffix = $n === 1 ? '' : '-' . $n;
-            $slug   = rtrim(substr($base, 0, Products::SLUG_MAX - strlen($suffix)), '-') . $suffix;
-            $taken  = $this->product_model->url_taken($slug);
-            $other  = $this->meta_model->get_by_page_url(ProductModel::URL_PREFIX . $slug);
-            if ($taken === null || $other === false) {
-                return false;
-            }
-            if (! $taken && ! is_array($other) && ! MetaModel::reserved(ProductModel::URL_PREFIX . $slug)) {
-                return $slug;
-            }
-        }
-
-        return false;
     }
 }

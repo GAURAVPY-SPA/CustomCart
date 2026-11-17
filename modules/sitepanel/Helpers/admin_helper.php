@@ -24,15 +24,7 @@ if (! function_exists('admin_pagination')) {
     {
         $total_rows = (int) $total_rows;
         $per_page   = (int) $record_per;
-        $num_links  = 2;
-        $segment    = 'page';
-        $attributes = ' class="page-link"';
-        $data_attr  = 'data-ci-pagination-page';
-
-        $first_tag_open = $last_tag_open = $prev_tag_open = $next_tag_open = $num_tag_open = '<li class="page-item">';
-        $first_tag_close = $last_tag_close = $prev_tag_close = $next_tag_close = $num_tag_close = '</li>';
-        $cur_tag_open  = '<li class="page-item active" aria-current="page"><span class="page-link">';
-        $cur_tag_close = '</span></li>';
+        $num_links  = 2; // page number links on each side of the current page
 
         if ($total_rows === 0 || $per_page === 0) {
             return '';
@@ -44,100 +36,53 @@ if (! function_exists('admin_pagination')) {
             return '';
         }
 
-        // rel="start|prev|next" is given to the first link of each kind only.
-        $link_types = ['start' => 'start', 'prev' => 'prev', 'next' => 'next'];
-        $rel        = static function (string $type) use (&$link_types): string {
-            if (isset($link_types[$type])) {
-                unset($link_types[$type]);
-
-                return ' rel="' . $type . '"';
-            }
-
-            return '';
-        };
-
+        // Other query parameters are kept; page 1 is the URL without ?page=.
         $get = service('request')->getGet();
         $get = is_array($get) ? $get : [];
-        unset($get['c'], $get['m'], $get[$segment]);
+        unset($get['c'], $get['m'], $get['page']);
 
-        $base_url         = trim(site_url($base_uri));
-        $query_string_sep = (! str_contains($base_url, '?')) ? '?' : '&amp;';
+        $base_url  = trim(site_url($base_uri));
+        $separator = str_contains($base_url, '?') ? '&amp;' : '?';
+        $first_url = $base_url . ($get ? $separator . http_build_query($get) : '');
+        $page_url  = $base_url . $separator . http_build_query(array_merge($get, ['page' => ''])); // + page number
 
-        $first_url = $base_url;
-        if (! empty($get)) {
-            $first_url .= $query_string_sep . http_build_query($get);
-        }
-        $base_url .= $query_string_sep . http_build_query(array_merge($get, [$segment => '']));
+        $cur_page = service('request')->getGet('page');
+        $cur_page = (is_string($cur_page) && ctype_digit($cur_page) && (int) $cur_page !== 0) ? (int) $cur_page : 1;
+        $cur_page = min($cur_page, $num_pages);
 
-        $base_page = 1;
-        $cur_page  = service('request')->getGet($segment) ?? '';
-        $cur_page  = is_string($cur_page) ? $cur_page : '';
+        $link = static function (int $page, string $label, string $rel = '') use ($first_url, $page_url): string {
+            $href = $page === 1 ? $first_url : $page_url . $page;
+            $rel  = $rel === '' ? '' : ' rel="' . $rel . '"';
 
-        if (! ctype_digit($cur_page) || (int) $cur_page === 0) {
-            $cur_page = $base_page;
-        } else {
-            $cur_page = (int) $cur_page;
-        }
-
-        if ($cur_page > $num_pages) {
-            $cur_page = $num_pages;
-        }
-
-        $uri_page_number = $cur_page;
-
-        $start = (($cur_page - $num_links) > 0) ? $cur_page - ($num_links - 1) : 1;
-        $end   = (($cur_page + $num_links) < $num_pages) ? $cur_page + $num_links : $num_pages;
+            return '<li class="page-item"><a href="' . $href . '" class="page-link" data-ci-pagination-page="' . $page . '"'
+                . $rel . '>' . $label . '</a></li>';
+        };
 
         $output = '';
 
-        if ($cur_page > ($num_links + 1 + ! $num_links)) {
-            $attr = sprintf('%s %s="%d"', $attributes, $data_attr, 1);
-            $output .= $first_tag_open . '<a href="' . $first_url . '"' . $attr . $rel('start') . '>'
-                . 'First</a>' . $first_tag_close;
+        // rel="start" is on "First", or on the page 1 link when "First" isn't shown.
+        if ($cur_page > $num_links + 1) {
+            $output .= $link(1, 'First', 'start');
         }
 
         if ($cur_page !== 1) {
-            $i    = $uri_page_number - 1;
-            $attr = sprintf('%s %s="%d"', $attributes, $data_attr, ($cur_page - 1));
-
-            if ($i === $base_page) {
-                $output .= $prev_tag_open . '<a href="' . $first_url . '"' . $attr . $rel('prev') . '>'
-                    . 'Previous</a>' . $prev_tag_close;
-            } else {
-                $output .= $prev_tag_open . '<a href="' . $base_url . $i . '"' . $attr . $rel('prev') . '>'
-                    . 'Previous</a>' . $prev_tag_close;
-            }
+            $output .= $link($cur_page - 1, 'Previous', 'prev');
         }
 
-        for ($loop = $start - 1; $loop <= $end; $loop++) {
-            $i    = $loop;
-            $attr = sprintf('%s %s="%d"', $attributes, $data_attr, $loop);
-
-            if ($i >= $base_page) {
-                if ($cur_page === $loop) {
-                    $output .= $cur_tag_open . $loop . $cur_tag_close;
-                } elseif ($i === $base_page) {
-                    $output .= $num_tag_open . '<a href="' . $first_url . '"' . $attr . $rel('start') . '>'
-                        . $loop . '</a>' . $num_tag_close;
-                } else {
-                    $output .= $num_tag_open . '<a href="' . $base_url . $i . '"' . $attr . '>'
-                        . $loop . '</a>' . $num_tag_close;
-                }
+        for ($page = max(1, $cur_page - $num_links); $page <= min($cur_page + $num_links, $num_pages); $page++) {
+            if ($page === $cur_page) {
+                $output .= '<li class="page-item active" aria-current="page"><span class="page-link">' . $page . '</span></li>';
+            } else {
+                $output .= $link($page, (string) $page, $page === 1 ? 'start' : '');
             }
         }
 
         if ($cur_page < $num_pages) {
-            $i    = $cur_page + 1;
-            $attr = sprintf('%s %s="%d"', $attributes, $data_attr, $cur_page + 1);
-            $output .= $next_tag_open . '<a href="' . $base_url . $i . '"' . $attr
-                . $rel('next') . '>Next</a>' . $next_tag_close;
+            $output .= $link($cur_page + 1, 'Next', 'next');
         }
 
-        if (($cur_page + $num_links + ! $num_links) < $num_pages) {
-            $i    = $num_pages;
-            $attr = sprintf('%s %s="%d"', $attributes, $data_attr, $num_pages);
-            $output .= $last_tag_open . '<a href="' . $base_url . $i . '"' . $attr . '>'
-                . 'Last</a>' . $last_tag_close;
+        if ($cur_page + $num_links < $num_pages) {
+            $output .= $link($num_pages, 'Last');
         }
 
         $output = preg_replace('#([^:"])//+#', '\1/', $output);

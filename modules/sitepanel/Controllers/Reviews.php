@@ -45,7 +45,7 @@ class Reviews extends AdminController
 
     public function index(): string
     {
-        $keyword    = mb_substr(trim((string) $this->request->getGet('keyword')), 0, 80);
+        $keyword    = $this->keyword_param();
         $status     = $this->status_param((string) $this->request->getGet('status'));
         $product_id = max(0, (int) $this->request->getGet('product'));
         $page       = $this->current_page();
@@ -97,16 +97,11 @@ class Reviews extends AdminController
     public function bulk(): void
     {
         $query = array_filter([
-            'keyword' => mb_substr(trim((string) $this->request->getPost('keyword')), 0, 80),
+            'keyword' => $this->keyword_param((string) $this->request->getPost('keyword')),
             'status'  => $this->status_param((string) $this->request->getPost('status_filter')),
             'product' => max(0, (int) $this->request->getPost('product')) ?: '',
         ], 'strlen');
 
         $this->process_bulk_action($this->review_model, 'get_reviews_by_ids', 'Review', $query);
-    }
-
-    protected function status_param(string $value): string
-    {
-        return in_array($value, ['1', '0'], true) ? $value : '';
     }
 }

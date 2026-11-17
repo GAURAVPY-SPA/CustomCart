@@ -50,14 +50,12 @@ class Settings extends AdminController
      * Online store amounts (key => [label, maximum]), saved with two decimals;
      * {currency} in a label is the store currency symbol (display_symbol()).
      * They drive every cart, checkout and order calculation (SiteSettings::shop_amounts()).
+     * The delivery charge and free delivery amount are set in Sitepanel > Manage
+     * Shipping (default delivery method); low_stock_threshold is not on this
+     * form (its saved value, else 5, is still used).
      */
     public const SHOP_KEYS = [
-        // Delivery charge and free delivery amount: Sitepanel > Manage Shipping (default delivery method).
-        // 'shipping_charges'    => ['Shipping Charges ({currency})', 9999999.99],
-        // 'free_delivery_above' => ['Free Delivery Above ({currency})', 9999999.99],
-        'gst_percent'         => ['VAT Percentage (%)', 100],
-        // Hidden from the form; the saved value (else 5) is still used for low stock.
-        // 'low_stock_threshold' => ['Low Stock Threshold', 100000],
+        'gst_percent' => ['VAT Percentage (%)', 100],
     ];
 
     protected string $menu_highlight = 'settings';
@@ -137,7 +135,7 @@ class Settings extends AdminController
             $v->set_rules(
                 $key,
                 $label,
-                ['trim', 'max_length[250]', ['valid_web_url', fn ($value) => $this->is_web_url($value)]],
+                ['trim', 'max_length[250]', ['valid_web_url', 'sp_is_web_url']],
                 ['valid_web_url' => 'The %s field must be a complete web address starting with http:// or https://.'],
             );
         }
@@ -242,27 +240,5 @@ class Settings extends AdminController
         }
 
         return [];
-    }
-
-    /**
-     * Empty, or an absolute http(s) URL with a host. CodeIgniter's valid_url is
-     * not used: it accepts "example.com" without a scheme and other schemes such
-     * as ftp://, but these links are stored and used as complete web addresses.
-     *
-     * @param string|null $value
-     */
-    protected function is_web_url($value): bool
-    {
-        $value = (string) $value;
-        if ($value === '') {
-            return true;
-        }
-
-        $scheme = strtolower((string) parse_url($value, PHP_URL_SCHEME));
-        $host   = (string) parse_url($value, PHP_URL_HOST);
-
-        return filter_var($value, FILTER_VALIDATE_URL) !== false
-            && in_array($scheme, ['http', 'https'], true)
-            && $host !== '';
     }
 }

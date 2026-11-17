@@ -67,18 +67,6 @@ class NewsletterModel extends BaseModel
     }
 
     /**
-     * @deprecated Use get_subscribers_by_ids() (kept for older code).
-     *
-     * @param list<int> $ids
-     *
-     * @return array|false
-     */
-    public function get_records_by_ids(array $ids)
-    {
-        return $this->get_subscribers_by_ids($ids);
-    }
-
-    /**
      * @param list<int> $ids
      */
     public function bulk_update_status(array $ids, string $status): bool

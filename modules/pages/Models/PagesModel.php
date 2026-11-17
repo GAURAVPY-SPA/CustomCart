@@ -85,34 +85,6 @@ class PagesModel extends BaseModel
     }
 
     /**
-     * Published pages shown in these designed views, in the order of $layouts
-     * (e.g. the Legal Information menu).
-     *
-     * @param list<string> $layouts
-     *
-     * @return array|false page_id, page_name, friendly_url, layout
-     */
-    public function get_published_in_layouts(array $layouts)
-    {
-        if (! $layouts || ! $this->db_ready()) {
-            return false;
-        }
-
-        $rows = $this->all_rows($this->table(self::TABLE)
-            ->select('page_id, page_name, friendly_url, layout')
-            ->where('status', '1')
-            ->whereIn('layout', $layouts)
-            ->orderBy('page_id', 'ASC')
-            ->get());
-        if (! is_array($rows)) {
-            return $rows;
-        }
-        usort($rows, static fn ($a, $b) => array_search($a['layout'], $layouts, true) <=> array_search($b['layout'], $layouts, true));
-
-        return $rows;
-    }
-
-    /**
      * Pages by name (deleted ones left out), optionally matching a page-name
      * keyword and a status; the total is left in $this->total_rec_found.
      *

@@ -45,32 +45,15 @@ class Uploads extends Controller
         $mtime = (int) filemtime($path);
         $etag  = '"' . md5($folder . '/' . $file . '/' . $mtime . '/' . filesize($path)) . '"';
 
-        // setCache() replaces the framework's default no-store header.
-        $this->response
-            ->setCache([
-                'public',
-                'max-age'       => $config->cacheSeconds,
-                'etag'          => $etag,
-                'last-modified' => gmdate('D, d M Y H:i:s', $mtime) . ' GMT',
-            ])
-            ->setHeader('X-Content-Type-Options', 'nosniff');
-
         if ($document) {
             // A PDF opens in the browser's viewer (which a sandbox CSP would block); Word files are always downloaded.
             $download = $ext !== 'pdf' || $this->request->getGet('download') === '1';
-            $this->response->setHeader('Content-Disposition', ($download ? 'attachment' : 'inline') . '; filename="' . $file . '"');
+            $headers  = ['Content-Disposition' => ($download ? 'attachment' : 'inline') . '; filename="' . $file . '"'];
         } else {
-            $this->response->setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+            $headers = ['Content-Security-Policy' => "default-src 'none'; sandbox"];
         }
 
-        if (trim($this->request->getHeaderLine('If-None-Match')) === $etag) {
-            return $this->response->setStatusCode(304);
-        }
-
-        return $this->response
-            ->setHeader('Content-Type', $mime) // no charset: binary file
-            ->setHeader('Content-Length', (string) filesize($path))
-            ->setBody((string) file_get_contents($path));
+        return $this->send_file($path, $mime, $etag, $mtime, $headers);
     }
 
     /**
@@ -94,15 +77,31 @@ class Uploads extends Controller
         $mtime = (int) filemtime($path);
         $etag  = '"' . md5('thumb/' . $folder . '/' . $file . '/' . filesize($path)) . '"';
 
+        return $this->send_file($path, $mime, $etag, $mtime, ['Content-Security-Policy' => "default-src 'none'; sandbox"]);
+    }
+
+    /**
+     * Send a checked file: public cache headers (Config\Uploads::$cacheSeconds,
+     * ETag, Last-Modified), nosniff and $headers; 304 when the browser's
+     * If-None-Match is the ETag, else the file's content.
+     *
+     * @param string               $mime    Content-Type (no charset: binary file)
+     * @param array<string,string> $headers Extra headers (CSP or Content-Disposition), in this order
+     */
+    protected function send_file(string $path, string $mime, string $etag, int $mtime, array $headers): ResponseInterface
+    {
+        // setCache() replaces the framework's default no-store header.
         $this->response
             ->setCache([
                 'public',
-                'max-age'       => $config->cacheSeconds,
+                'max-age'       => config(UploadsConfig::class)->cacheSeconds,
                 'etag'          => $etag,
                 'last-modified' => gmdate('D, d M Y H:i:s', $mtime) . ' GMT',
             ])
-            ->setHeader('X-Content-Type-Options', 'nosniff')
-            ->setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+            ->setHeader('X-Content-Type-Options', 'nosniff');
+        foreach ($headers as $name => $value) {
+            $this->response->setHeader($name, $value);
+        }
 
         if (trim($this->request->getHeaderLine('If-None-Match')) === $etag) {
             return $this->response->setStatusCode(304);

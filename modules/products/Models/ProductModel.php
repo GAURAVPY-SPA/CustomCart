@@ -188,27 +188,6 @@ class ProductModel extends BaseModel
         return $count === false ? null : $count > 0;
     }
 
-    /**
-     * Set category_links of every product filed in (or below) the given
-     * categories again, after a category moved.
-     *
-     * @param array<int, list<int>> $links category_id => its ancestor ids (self first)
-     */
-    public function update_category_links(array $links): bool
-    {
-        if (! $this->db_ready()) {
-            return false;
-        }
-
-        foreach ($links as $category_id => $ids) {
-            if ($this->write_failed(fn () => (bool) $this->table(self::TABLE)->where('category_id', (int) $category_id)->update(['category_links' => implode(',', $ids)]))) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
     /* -----------------------------------------------------------------
      * Categories (wl_product_categories)
      * ----------------------------------------------------------------- */
@@ -1158,13 +1137,19 @@ class ProductModel extends BaseModel
     }
 
     /**
-     * Newest public products flagged with one of the is_* flags (home page, store page).
+     * Newest public products flagged with one of the is_* flags (home page,
+     * store page); the newest public products when none is flagged.
      *
      * @return list<array>|false
      */
     public function get_public_flagged(string $flag, int $limit = 8)
     {
-        return $this->search_public(['flag' => $flag], 'newest', 0, $limit);
+        $rows = $this->search_public(['flag' => $flag], 'newest', 0, $limit);
+        if (is_array($rows) && ! $rows) {
+            $rows = $this->search_public([], 'newest', 0, $limit);
+        }
+
+        return $rows;
     }
 
     /**

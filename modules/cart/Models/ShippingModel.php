@@ -92,16 +92,6 @@ class ShippingModel extends BaseModel
     }
 
     /**
-     * What a method costs for a cart total.
-     */
-    public static function rate_for(array $method, float $cart_total): float
-    {
-        $free_above = (float) $method['free_above'];
-
-        return $free_above > 0 && $cart_total >= $free_above ? 0.0 : round((float) $method['shipment_rate'], 2);
-    }
-
-    /**
      * Make one method the default (the others stop being it).
      */
     public function set_default(int $id): bool

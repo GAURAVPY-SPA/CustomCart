@@ -2,23 +2,17 @@
 /*
 | Product page (design: html/detail.htm), see Products::detail().
 | $product, $colors / $sizes (id => row), $variants ['list' => "color-size" => price/stock, 'selected'],
+| $initial (Products::initial_data(): price / stock / status of the preselected combination, else of the product),
 | $media, $reviews + $rating (product testimonials), $faqs (FaqModel::get_product_faqs()),
 | $material (fabric row or NULL), $related, $in_wishlist, $forms['review'], $free_above.
 | Add to Cart: form[data-kt-cart] (customcart.js, AJAX); Buy Now submits it to cart/add with
 | buy_now=1 (then checkout). Colour / size changes: js/product.js (?variant=1 JSON).
 */
-use Modules\Products\Models\ProductModel;
-
 $id       = (int) $product['products_id'];
 $name     = (string) $product['product_name'];
 $url      = product_url($product['friendly_url']);
-$selected = $variants['selected'] !== NULL ? $variants['list'][$variants['selected']] : NULL;
-$prices   = $selected ? array('sale' => $selected['price'], 'regular' => $selected['regular'], 'saving' => $selected['saving']) : ProductModel::prices($product);
-$stock    = $selected ? $selected['available'] : max(0, (int) $product['product_quantity']);
-$low      = $selected ? $selected['low'] : FALSE;
-$status   = $stock <= 0 ? 'Out of Stock' : ($low ? 'Only '.$stock.' left' : 'In Stock');
-$max      = $selected ? $selected['max'] : max(1, min($stock, config(\Config\Shop::class)->maxQuantity));
-list($sel_color, $sel_size) = $selected ? array($selected['color'], $selected['size']) : array(0, 0);
+$stock    = $initial['available'];
+$low      = $initial['low'];
 $images   = $media ? $media : array(array('media' => NULL));
 $cat      = $path ? end($path) : NULL;
 $review   = $forms['review'];
@@ -70,9 +64,9 @@ echo view('inner_hero', array('hero' => $hero + array('banner' => 'Online Store'
 <div class="kt-pd-meta d-flex flex-wrap align-items-center text-body-secondary">
 <span>SKU: <b class="text-body"><?php echo html_escape($product['product_code']); ?></b></span>
 <?php if ($material): ?><span>Fabric: <b class="text-body"><?php echo html_escape($material['material_name']); ?></b></span><?php endif; ?>
-<span class="kt-qv-stock fw-bold<?php echo $stock <= 0 ? ' text-danger' : ($low ? ' is-low' : ''); ?>" id="ktPdStock"><i class="bi bi-<?php echo $stock <= 0 ? 'x-circle' : ($low ? 'exclamation-circle' : 'check-circle'); ?>-fill"></i> <span><?php echo html_escape($status); ?></span></span>
+<span class="kt-qv-stock fw-bold<?php echo $stock <= 0 ? ' text-danger' : ($low ? ' is-low' : ''); ?>" id="ktPdStock"><i class="bi bi-<?php echo $stock <= 0 ? 'x-circle' : ($low ? 'exclamation-circle' : 'check-circle'); ?>-fill"></i> <span><?php echo html_escape($initial['status_text']); ?></span></span>
 </div>
-<div class="kt-pd-price d-flex flex-wrap align-items-baseline kt-gap-12"><span class="kt-qv-now fw-bold text-dark" id="ktPdPrice"><?php echo display_price($prices['sale']); ?></span><span class="kt-qv-old text-decoration-line-through text-body-tertiary" id="ktPdOld"<?php echo $prices['saving'] > 0 ? '' : ' hidden'; ?>><?php echo display_price($prices['regular']); ?></span></div>
+<div class="kt-pd-price d-flex flex-wrap align-items-baseline kt-gap-12"><span class="kt-qv-now fw-bold text-dark" id="ktPdPrice"><?php echo $initial['price_text']; ?></span><span class="kt-qv-old text-decoration-line-through text-body-tertiary" id="ktPdOld"<?php echo $initial['saving'] > 0 ? '' : ' hidden'; ?>><?php echo $initial['regular_text']; ?></span></div>
 <?php if ($lead !== ''): ?><p class="kt-pd-lead text-body-secondary mb-0"><?php echo html_escape(character_limiter($lead, 320, '…')); ?></p><?php endif; ?>
 
 <?php echo form_open('cart/add', array('id' => 'ktPdForm', 'data-kt-cart' => '', 'data-variant-url' => $url.'?variant=1')); ?>
@@ -80,10 +74,10 @@ echo view('inner_hero', array('hero' => $hero + array('banner' => 'Online Store'
 <div class="kt-pd-opts d-flex flex-column">
 <?php if ($colors): ?>
 <div>
-<div class="kt-qv-label fw-bold mb-2">COLOUR: <span class="text-body-secondary fw-normal" id="ktPdColorName"><?php echo html_escape(isset($colors[$sel_color]) ? $colors[$sel_color]['color_name'] : ''); ?></span></div>
+<div class="kt-qv-label fw-bold mb-2">COLOUR: <span class="text-body-secondary fw-normal" id="ktPdColorName"><?php echo html_escape(isset($colors[$initial['color']]) ? $colors[$initial['color']]['color_name'] : ''); ?></span></div>
 <div class="d-flex flex-wrap kt-gap-10">
 <?php foreach ($colors as $cid => $color): $ccode = (string) $color['color_code']; ?>
-<input type="radio" class="btn-check" name="color_id" value="<?php echo (int) $cid; ?>" id="ktPdC<?php echo (int) $cid; ?>" data-name="<?php echo html_escape($color['color_name']); ?>"<?php echo (int) $cid === $sel_color ? ' checked' : ''; ?>><label class="kt-pd-color rounded-circle" for="ktPdC<?php echo (int) $cid; ?>" title="<?php echo html_escape($color['color_name']); ?>" style="background:<?php echo html_escape(preg_match('/^#[0-9a-f]{3,6}$/i', $ccode) ? $ccode : '#ccc'); ?>"></label>
+<input type="radio" class="btn-check" name="color_id" value="<?php echo (int) $cid; ?>" id="ktPdC<?php echo (int) $cid; ?>" data-name="<?php echo html_escape($color['color_name']); ?>"<?php echo (int) $cid === $initial['color'] ? ' checked' : ''; ?>><label class="kt-pd-color rounded-circle" for="ktPdC<?php echo (int) $cid; ?>" title="<?php echo html_escape($color['color_name']); ?>" style="background:<?php echo html_escape(preg_match('/^#[0-9a-f]{3,6}$/i', $ccode) ? $ccode : '#ccc'); ?>"></label>
 <?php endforeach; ?>
 </div>
 </div>
@@ -93,12 +87,12 @@ echo view('inner_hero', array('hero' => $hero + array('banner' => 'Online Store'
 <label class="kt-qv-fabric mb-0" for="ktPdSize"><span class="kt-qv-label d-block fw-bold mb-2">SIZE</span>
 <select class="form-select kt-select rounded-pill" id="ktPdSize" name="size_id">
 <?php foreach ($sizes as $sid => $size): ?>
-<option value="<?php echo (int) $sid; ?>"<?php echo (int) $sid === $sel_size ? ' selected' : ''; ?>><?php echo html_escape($size['size_name']); ?></option>
+<option value="<?php echo (int) $sid; ?>"<?php echo (int) $sid === $initial['size'] ? ' selected' : ''; ?>><?php echo html_escape($size['size_name']); ?></option>
 <?php endforeach; ?>
 </select>
 </label>
 <?php endif; ?>
-<label class="mb-0" for="ktPdQty"><span class="kt-qv-label d-block fw-bold mb-2">QTY</span><input type="number" class="form-control kt-input kt-pd-qty rounded-pill text-center fw-bold" id="ktPdQty" name="qty" value="1" min="1" max="<?php echo (int) $max; ?>"></label>
+<label class="mb-0" for="ktPdQty"><span class="kt-qv-label d-block fw-bold mb-2">QTY</span><input type="number" class="form-control kt-input kt-pd-qty rounded-pill text-center fw-bold" id="ktPdQty" name="qty" value="1" min="1" max="<?php echo (int) $initial['max']; ?>"></label>
 </div>
 </div>
 

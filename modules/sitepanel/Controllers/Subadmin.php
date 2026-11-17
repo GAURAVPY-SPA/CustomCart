@@ -68,7 +68,8 @@ class Subadmin extends AdminController
 
     public function index(): string
     {
-        [$keyword, $status] = $this->filters('get');
+        $keyword = $this->keyword_param();
+        $status  = $this->status_param((string) $this->request->getGet('status'));
         $page = $this->current_page();
         $res  = $this->subadmin_model->get_subadmins(($page - 1) * self::PAGESIZE, self::PAGESIZE, $keyword, $status);
 
@@ -173,8 +174,7 @@ class Subadmin extends AdminController
 
     public function bulk(): void
     {
-        [$keyword, $status] = $this->filters('post');
-        $this->process_bulk_action($this->subadmin_model, 'get_subadmins_by_ids', 'Sub-admin', array_filter(['keyword' => $keyword, 'status' => $status]));
+        $this->process_bulk_action($this->subadmin_model, 'get_subadmins_by_ids', 'Sub-admin', $this->list_query());
     }
 
     /**
@@ -290,16 +290,5 @@ class Subadmin extends AdminController
         return $this->subadmin_model->save($data, $rows, $row ? (int) $row['admin_id'] : null) !== false
             ? []
             : ['Sub-admin could not be saved. Please try again.'];
-    }
-
-    /**
-     * [keyword, status] from the list query (get) or the posted list filters (post).
-     */
-    protected function filters(string $from): array
-    {
-        $keyword = $from === 'get' ? $this->request->getGet('keyword') : $this->request->getPost('keyword');
-        $status  = (string) ($from === 'get' ? $this->request->getGet('status') : $this->request->getPost('status_filter'));
-
-        return [mb_substr(trim((string) $keyword), 0, 80), in_array($status, ['1', '0'], true) ? $status : ''];
     }
 }

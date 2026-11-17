@@ -52,7 +52,6 @@ class Staticpages extends AdminController
     protected string $base           = 'sitepanel/staticpages';
     protected string $item           = 'Page';
     protected string $menu_highlight = 'staticpages';
-    protected array $status_words    = ['activated', 'deactivated'];
     protected PagesModel $pages_model;
 
     protected function init(): void
@@ -62,7 +61,7 @@ class Staticpages extends AdminController
 
     public function index(): string
     {
-        $keyword = mb_substr(trim((string) $this->request->getGet('keyword')), 0, 50);
+        $keyword = $this->keyword_param(null, 50);
         $status  = $this->status_param((string) $this->request->getGet('status'));
 
         $page = $this->current_page();
@@ -182,9 +181,9 @@ class Staticpages extends AdminController
 
     public function bulk(): void
     {
-        $keyword = mb_substr(trim((string) $this->request->getPost('keyword')), 0, 50);
+        $keyword = $this->keyword_param((string) $this->request->getPost('keyword'), 50);
         $status  = $this->status_param((string) $this->request->getPost('status_filter'));
-        $query   = array_filter(['keyword' => $keyword, 'status' => $status]);
+        $query   = array_filter(['keyword' => $keyword, 'status' => $status], static fn ($v) => $v !== '');
 
         if ($this->request->getPost('bulk_action') === 'delete') {
             $this->bulk_delete_checked($this->pages_model, 'get_cms_pages_by_ids', 'Page', $query, fn (array $rows) => $this->designed_pages_error($rows));
@@ -278,10 +277,5 @@ class Staticpages extends AdminController
         }
 
         return $this->pages_model->url_available($url, $page_id) === true;
-    }
-
-    protected function status_param(string $value): string
-    {
-        return in_array($value, ['1', '0'], true) ? $value : '';
     }
 }

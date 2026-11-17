@@ -4,7 +4,6 @@ namespace Modules\Sitepanel\Controllers;
 
 use App\Controllers\AdminController;
 use App\Libraries\FormValidation;
-use DateTime;
 use Modules\Sitepanel\Libraries\AdminAccess;
 use Modules\Sitepanel\Models\CouponModel;
 
@@ -52,7 +51,7 @@ class Coupons extends AdminController
 
     public function index(): string
     {
-        $keyword = mb_substr(trim((string) $this->request->getGet('keyword')), 0, 80);
+        $keyword = $this->keyword_param();
         $status  = $this->status_param((string) $this->request->getGet('status'));
         $page    = $this->current_page();
         $res     = $this->coupon_model->get_coupons(($page - 1) * self::PAGESIZE, self::PAGESIZE, $keyword, $status);
@@ -135,9 +134,7 @@ class Coupons extends AdminController
 
     public function bulk(): void
     {
-        $keyword = mb_substr(trim((string) $this->request->getPost('keyword')), 0, 80);
-        $status  = $this->status_param((string) $this->request->getPost('status_filter'));
-        $this->process_bulk_action($this->coupon_model, 'get_coupons_by_ids', 'Coupon', array_filter(['keyword' => $keyword, 'status' => $status]));
+        $this->process_bulk_action($this->coupon_model, 'get_coupons_by_ids', 'Coupon', $this->list_query());
     }
 
     /**
@@ -151,7 +148,7 @@ class Coupons extends AdminController
         $minimum = $post('minimum_order_amount');
         $today   = date('Y-m-d');
         $amount  = ['valid_amount', static fn ($value) => (string) $value === '' || preg_match('/^[0-9]{1,8}(\.[0-9]{1,2})?$/D', (string) $value) === 1];
-        $date    = ['valid_date', static fn ($value) => (string) $value === '' || self::is_date((string) $value)];
+        $date    = ['valid_date', static fn ($value) => (string) $value === '' || sp_valid_date((string) $value)];
         $messages = ['valid_amount' => 'The {field} must be a positive number with at most 2 decimals.', 'valid_date' => 'The {field} must be a date (YYYY-MM-DD).'];
 
         $v = new FormValidation($this->request, $this);
@@ -180,11 +177,11 @@ class Coupons extends AdminController
 
         $start_kept = $row && $post('start_date') === (string) $row['start_date'];
         $v->set_rules('start_date', 'Coupon start date', ['trim', 'required', $date,
-            ['start_not_past', static fn ($value) => $start_kept || ! self::is_date((string) $value) || (string) $value >= $today]],
+            ['start_not_past', static fn ($value) => $start_kept || ! sp_valid_date((string) $value) || (string) $value >= $today]],
             $messages + ['start_not_past' => 'Coupon start date should not be less than current date.']);
         $start = $post('start_date');
         $v->set_rules('end_date', 'Coupon end date', ['trim', 'required', $date,
-            ['end_after_start', static fn ($value) => ! self::is_date((string) $value) || ! self::is_date($start) || (string) $value >= $start]],
+            ['end_after_start', static fn ($value) => ! sp_valid_date((string) $value) || ! sp_valid_date($start) || (string) $value >= $start]],
             $messages + ['end_after_start' => 'Coupon end date should not be less than coupon start date.']);
 
         if (! $v->run()) {
@@ -218,20 +215,9 @@ class Coupons extends AdminController
         return $saved ? [] : ['Coupon could not be saved. Please try again.'];
     }
 
-    protected static function is_date(string $value): bool
-    {
-        $date = DateTime::createFromFormat('!Y-m-d', $value);
-
-        return $date && $date->format('Y-m-d') === $value;
-    }
 
     protected static function is_amount(string $value): bool
     {
         return preg_match('/^[0-9]{1,8}(\.[0-9]{1,2})?$/D', $value) === 1;
-    }
-
-    protected function status_param(string $value): string
-    {
-        return in_array($value, ['1', '0'], true) ? $value : '';
     }
 }

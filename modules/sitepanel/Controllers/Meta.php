@@ -17,7 +17,6 @@ class Meta extends AdminController
 {
     protected string $base           = 'sitepanel/meta';
     protected string $item           = 'Meta tag';
-    protected array $status_words    = ['activated', 'deactivated'];
     protected string $menu_highlight = 'meta';
     protected MetaModel $meta_model;
 
@@ -28,9 +27,8 @@ class Meta extends AdminController
 
     public function index(): string
     {
-        $keyword = mb_substr(trim((string) $this->request->getGet('keyword')), 0, 80);
-        $status  = (string) $this->request->getGet('status');
-        $status  = in_array($status, ['1', '0'], true) ? $status : '';
+        $keyword = $this->keyword_param();
+        $status  = $this->status_param((string) $this->request->getGet('status'));
         $page    = $this->current_page();
         $rows    = $this->meta_model->get_meta(($page - 1) * self::PAGESIZE, self::PAGESIZE, $keyword, $status);
 

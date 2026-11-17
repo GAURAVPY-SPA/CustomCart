@@ -70,14 +70,6 @@ class NewsletterMailer
         return $this->mailer()->method_label();
     }
 
-    /**
-     * Temporary switch: report failed sends as sent (Mailer::show_success_on_failure()).
-     */
-    public function show_success_on_failure(): bool
-    {
-        return $this->mailer()->show_success_on_failure();
-    }
-
     protected function mailer(): Mailer
     {
         return $this->mailer ??= new Mailer();

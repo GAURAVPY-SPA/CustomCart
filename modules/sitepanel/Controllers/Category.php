@@ -100,7 +100,7 @@ class Category extends AdminController
     public function index($parent_id = 0): string
     {
         $parent_id = max(0, (int) ($parent_id ?: $this->request->getGet('parent')));
-        $keyword   = mb_substr(trim((string) $this->request->getGet('keyword')), 0, 80);
+        $keyword   = $this->keyword_param();
         $status    = $this->status_param((string) $this->request->getGet('status'));
         $pagesize  = (int) $this->request->getGet('pagesize');
         $pagesize  = in_array($pagesize, self::PAGE_SIZES, true) ? $pagesize : self::PAGESIZE;
@@ -134,7 +134,7 @@ class Category extends AdminController
         $data['res']           = $res;
         $data['total']         = $this->category_model->total_rec_found;
         $data['page']          = $page;
-        $data['page_links']    = admin_pagination($this->base . ($parent_id > 0 ? '/index/' . $parent_id : ''), $data['total'], $pagesize);
+        $data['page_links']    = admin_pagination($this->list_uri($parent_id), $data['total'], $pagesize);
         $data['keyword']       = $keyword;
         $data['status']        = $status;
         $data['pagesize']      = $pagesize;
@@ -177,7 +177,7 @@ class Category extends AdminController
             $data['errors'] = $this->save(null, $parent);
             if (empty($data['errors'])) {
                 $this->session->setFlashdata('sitepanel_success', 'Record has been added successfully.');
-                redirect_now($this->base . ($parent_id > 0 ? '/index/' . $parent_id : ''));
+                redirect_now($this->list_uri($parent_id));
             }
         }
 
@@ -304,23 +304,21 @@ class Category extends AdminController
         $this->require_post();
         $this->return_parent = max(0, (int) $this->request->getPost('parent'));
         $query               = array_filter([
-            'keyword'  => mb_substr(trim((string) $this->request->getPost('keyword')), 0, 80),
+            'keyword'  => $this->keyword_param((string) $this->request->getPost('keyword')),
             'status'   => $this->status_param((string) $this->request->getPost('status_filter')),
             'pagesize' => in_array((int) $this->request->getPost('pagesize'), self::PAGE_SIZES, true) ? (string) (int) $this->request->getPost('pagesize') : '',
         ], 'strlen');
 
-        switch ((string) $this->request->getPost('bulk_action')) {
-            case 'order':
-                $this->save_order($query);
-                // no break (save_order() redirects)
-            case 'flag':
-                $this->set_flag($query);
-                // no break (set_flag() redirects)
-            case 'delete':
-                $this->bulk_delete_checked($this->category_model, 'get_categories_by_ids', 'Category', $query, fn (array $rows) => $this->delete_error($rows), 'category_image', self::IMAGE_FOLDER);
-                // no break (redirects)
-            default:
-                $this->process_bulk_action($this->category_model, 'get_categories_by_ids', 'Category', $query);
+        // Each action redirects when done.
+        $action = (string) $this->request->getPost('bulk_action');
+        if ($action === 'order') {
+            $this->save_order($query);
+        } elseif ($action === 'flag') {
+            $this->set_flag($query);
+        } elseif ($action === 'delete') {
+            $this->bulk_delete_checked($this->category_model, 'get_categories_by_ids', 'Category', $query, fn (array $rows) => $this->delete_error($rows), 'category_image', self::IMAGE_FOLDER);
+        } else {
+            $this->process_bulk_action($this->category_model, 'get_categories_by_ids', 'Category', $query);
         }
     }
 
@@ -535,12 +533,7 @@ class Category extends AdminController
         // The category's wl_meta_tags row is its page address: a new category
         // gets the name as SEO data (the reference's create_meta()); an edited
         // one keeps its SEO data (Meta Tags Management) and gets the new address.
-        $meta = $this->meta_model->get_entity_meta(self::META_TYPE, $id);
-        $ok   = $meta !== false && $this->meta_model->save_entity_meta(self::META_TYPE, $id, $url, [
-            'meta_title'       => is_array($meta) && $meta['meta_title'] !== '' ? $meta['meta_title'] : $name,
-            'meta_keyword'     => is_array($meta) && $meta['meta_keyword'] !== '' ? $meta['meta_keyword'] : $name,
-            'meta_description' => is_array($meta) && $meta['meta_description'] !== '' ? $meta['meta_description'] : $name,
-        ]);
+        $ok = $this->save_category_meta($id, $url, $name);
 
         if ($row && $url !== $row['friendly_url']) {
             $ok = $this->move_descendants($moves, $id) && $ok;
@@ -694,17 +687,32 @@ class Category extends AdminController
             if ($cid === $id) {
                 continue;
             }
-            $ok   = $this->category_model->safe_update(CategoryModel::TABLE, ['friendly_url' => $url], [CategoryModel::PRIMARY_KEY => $cid]) && $ok;
-            $meta = $this->meta_model->get_entity_meta(self::META_TYPE, $cid);
-            $name = (string) ($all[$cid]['category_name'] ?? '');
-            $ok   = $meta !== false && $this->meta_model->save_entity_meta(self::META_TYPE, $cid, $url, [
-                'meta_title'       => is_array($meta) && $meta['meta_title'] !== '' ? $meta['meta_title'] : $name,
-                'meta_keyword'     => is_array($meta) && $meta['meta_keyword'] !== '' ? $meta['meta_keyword'] : $name,
-                'meta_description' => is_array($meta) && $meta['meta_description'] !== '' ? $meta['meta_description'] : $name,
-            ]) && $ok;
+            $ok = $this->category_model->safe_update(CategoryModel::TABLE, ['friendly_url' => $url], [CategoryModel::PRIMARY_KEY => $cid]) && $ok;
+            $ok = $this->save_category_meta($cid, $url, (string) ($all[$cid]['category_name'] ?? '')) && $ok;
         }
 
         return $ok;
+    }
+
+    /**
+     * Save a category's wl_meta_tags row with its page address $url, keeping
+     * the SEO fields already set there (Meta Tags Management); empty or
+     * missing ones become the category name.
+     *
+     * @return bool FALSE when the row could not be read or saved
+     */
+    protected function save_category_meta(int $id, string $url, string $name): bool
+    {
+        $meta = $this->meta_model->get_entity_meta(self::META_TYPE, $id);
+        if ($meta === false) {
+            return false;
+        }
+
+        return $this->meta_model->save_entity_meta(self::META_TYPE, $id, $url, [
+            'meta_title'       => is_array($meta) && $meta['meta_title'] !== '' ? $meta['meta_title'] : $name,
+            'meta_keyword'     => is_array($meta) && $meta['meta_keyword'] !== '' ? $meta['meta_keyword'] : $name,
+            'meta_description' => is_array($meta) && $meta['meta_description'] !== '' ? $meta['meta_description'] : $name,
+        ]);
     }
 
     /**
@@ -748,10 +756,5 @@ class Category extends AdminController
         $pos = strrpos($url, '/');
 
         return $pos === false ? $url : substr($url, $pos + 1);
-    }
-
-    protected function status_param(string $value): string
-    {
-        return in_array($value, ['1', '0'], true) ? $value : '';
     }
 }

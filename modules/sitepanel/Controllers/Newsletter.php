@@ -30,7 +30,13 @@ use Modules\Sitepanel\Models\NewsletterModel;
  */
 class Newsletter extends AdminController
 {
-    protected string $base           = 'sitepanel/newsletter';
+    /**
+     * Session key and lifetime (seconds) of a newsletter compose/preview/send flow.
+     */
+    public const MAIL_FLOW_KEY = 'newsletter_mail_flow';
+    public const MAIL_FLOW_TTL = 1800;
+
+    protected string $base          = 'sitepanel/newsletter';
     protected string $item           = 'Subscriber';
     protected string $menu_highlight = 'newsletter';
     protected NewsletterModel $newsletter_model;
@@ -42,9 +48,8 @@ class Newsletter extends AdminController
 
     public function index(): string
     {
-        $keyword = mb_substr(trim((string) $this->request->getGet('keyword')), 0, 80);
-        $status  = (string) $this->request->getGet('status');
-        $status  = in_array($status, ['1', '0'], true) ? $status : '';
+        $keyword = $this->keyword_param();
+        $status  = $this->status_param((string) $this->request->getGet('status'));
 
         $page = $this->current_page();
         $res  = $this->newsletter_model->get_newsletter(self::PAGESIZE, ($page - 1) * self::PAGESIZE, $keyword, $status);
@@ -122,9 +127,8 @@ class Newsletter extends AdminController
 
     public function bulk(): string
     {
-        $keyword = mb_substr(trim((string) $this->request->getPost('keyword')), 0, 80);
-        $status  = (string) $this->request->getPost('status');
-        $status  = in_array($status, ['1', '0'], true) ? $status : '';
+        $keyword = $this->keyword_param((string) $this->request->getPost('keyword'));
+        $status  = $this->status_param((string) $this->request->getPost('status'));
 
         if ($this->request->getPost('bulk_action') === 'send_email') {
             return $this->start_email_compose($keyword, $status);
@@ -135,19 +139,11 @@ class Newsletter extends AdminController
 
     public function preview_email(): string
     {
-        $this->require_post();
-        $this->require_privilege(AdminAccess::PRIV_EDIT);
-        $flow = $this->valid_email_flow();
-        $rows = $this->email_flow_rows($flow);
+        [$flow, $rows] = $this->mail_flow_and_rows();
 
-        $errors = $this->validate_email_content();
-        if ($errors) {
-            return $this->render_email_compose($flow, $rows, $errors);
-        }
-
-        $message = (new HtmlSanitizer())->clean((string) $this->request->getPost('message'));
-        if (trim(strip_tags($message, '<img><hr>')) === '') {
-            return $this->render_email_compose($flow, $rows, ['The Message field has no supported content.']);
+        $content = $this->valid_email_content();
+        if (isset($content['errors'])) {
+            return $this->render_email_compose($flow, $rows, $content['errors']);
         }
 
         return $this->render('newsletter/newsletter_email_preview', [
@@ -155,17 +151,14 @@ class Newsletter extends AdminController
             'breadcrumbs'   => ['Newsletter' => site_url($this->base), 'Preview Email' => null],
             'flow'          => $flow,
             'rows'          => $rows,
-            'subject'       => trim((string) $this->request->getPost('subject')),
-            'message'       => $message,
+            'subject'       => $content['subject'],
+            'message'       => $content['message'],
         ]);
     }
 
     public function compose_email(): string
     {
-        $this->require_post();
-        $this->require_privilege(AdminAccess::PRIV_EDIT);
-        $flow = $this->valid_email_flow();
-        $rows = $this->email_flow_rows($flow);
+        [$flow, $rows] = $this->mail_flow_and_rows();
 
         // Runs the rules so set_value() shows the trimmed subject, as before.
         $this->validate_email_content();
@@ -175,24 +168,11 @@ class Newsletter extends AdminController
 
     public function send_email(): string
     {
-        $this->require_post();
-        $this->require_privilege(AdminAccess::PRIV_EDIT);
-        $flow = $this->valid_email_flow();
-        $rows = $this->email_flow_rows($flow);
+        [$flow, $rows] = $this->mail_flow_and_rows();
 
-        $errors = $this->validate_email_content();
-        if ($errors) {
-            return $this->render_email_compose($flow, $rows, $errors);
-        }
-
-        $message = (new HtmlSanitizer())->clean((string) $this->request->getPost('message'));
-        if (trim(strip_tags($message, '<img><hr>')) === '') {
-            return $this->render_email_compose($flow, $rows, ['The Message field has no supported content.']);
-        }
-
-        $subject = trim((string) $this->request->getPost('subject'));
-        if (preg_match('/[\r\n]/', $subject)) {
-            return $this->render_email_compose($flow, $rows, ['The Subject field cannot contain line breaks.']);
+        $content = $this->valid_email_content();
+        if (isset($content['errors'])) {
+            return $this->render_email_compose($flow, $rows, $content['errors']);
         }
 
         $from_email = trim((string) $this->admin['admin_email']);
@@ -200,11 +180,12 @@ class Newsletter extends AdminController
             return $this->render_email_compose($flow, $rows, ['The administrator email address is invalid; configure a valid sender before sending.']);
         }
 
-        $this->session->remove('newsletter_mail_flow');
+        // One use: a refresh or a second click cannot send the same email again.
+        $this->session->remove(self::MAIL_FLOW_KEY);
         $results = (new NewsletterMailer())->send_selected(
             $rows,
-            $subject,
-            $message,
+            $content['subject'],
+            $content['message'],
             $from_email,
             $this->site_settings->get('site_name'),
         );
@@ -237,14 +218,7 @@ class Newsletter extends AdminController
             $this->back(['keyword' => $keyword, 'status' => $status]);
         }
 
-        $valid_addresses = 0;
-
-        foreach ($rows as $row) {
-            if (filter_var(strtolower(trim((string) $row['subscriber_email'])), FILTER_VALIDATE_EMAIL) !== false) {
-                $valid_addresses++;
-            }
-        }
-        if ($valid_addresses === 0) {
+        if ($this->count_valid_emails($rows) === 0) {
             $this->session->setFlashdata('sitepanel_error', 'None of the selected subscribers has a valid email address.');
             $this->back(['keyword' => $keyword, 'status' => $status]);
         }
@@ -257,45 +231,46 @@ class Newsletter extends AdminController
             'status'  => $status,
             'issued'  => time(),
         ];
-        $this->session->set('newsletter_mail_flow', $flow);
+        $this->session->set(self::MAIL_FLOW_KEY, $flow);
 
         return $this->render_email_compose($flow, $rows, []);
     }
 
     /**
-     * The session flow matching the posted token; otherwise back to the list.
+     * Checks shared by preview_email, compose_email and send_email: POST, Edit
+     * privilege, the session flow matching the posted token, and its
+     * subscribers reloaded from the database. Redirects (and stops) when
+     * anything fails.
+     *
+     * @return array [flow, rows]
      */
-    protected function valid_email_flow(): array
+    protected function mail_flow_and_rows(): array
     {
-        $flow  = $this->session->get('newsletter_mail_flow');
-        $token = $this->request->getPost('token');
+        $this->require_post();
+        $this->require_privilege(AdminAccess::PRIV_EDIT);
 
+        $flow  = $this->session->get(self::MAIL_FLOW_KEY);
+        $token = $this->request->getPost('token');
         if (! is_array($flow) || ! is_string($token) || ! isset($flow['token'], $flow['ids'], $flow['issued'])
-            || ! is_string($flow['token']) || ! hash_equals($flow['token'], $token) || time() - (int) $flow['issued'] > 1800) {
-            $this->session->remove('newsletter_mail_flow');
+            || ! is_string($flow['token']) || ! hash_equals($flow['token'], $token) || time() - (int) $flow['issued'] > self::MAIL_FLOW_TTL) {
+            $this->session->remove(self::MAIL_FLOW_KEY);
             $this->session->setFlashdata('sitepanel_error', 'The newsletter email session expired. Select subscribers and try again.');
             redirect_now($this->base);
         }
 
-        return $flow;
-    }
-
-    /**
-     * The flow's subscribers reloaded from the database; otherwise back to the list.
-     */
-    protected function email_flow_rows(array $flow): array
-    {
         $rows = $this->newsletter_model->get_subscribers_by_ids($flow['ids']);
         if (! $this->selected_rows_match($rows, $flow['ids'])) {
-            $this->session->remove('newsletter_mail_flow');
+            $this->session->remove(self::MAIL_FLOW_KEY);
             redirect_now($this->email_list_url($flow));
         }
 
-        return $rows;
+        return [$flow, $rows];
     }
 
     /**
-     * @return list<string>
+     * The form rules for the subject and message.
+     *
+     * @return list<string> Errors
      */
     protected function validate_email_content(): array
     {
@@ -306,7 +281,37 @@ class Newsletter extends AdminController
         return $v->run() ? [] : array_values($v->error_array());
     }
 
-    protected function render_email_compose(array $flow, array $rows, array $errors): string
+    /**
+     * The posted subject and sanitized message, checked in this order: the
+     * form rules, a message with content left after sanitizing, a subject
+     * without line breaks.
+     *
+     * @return array ['subject', 'message'] or ['errors' => list<string>]
+     */
+    protected function valid_email_content(): array
+    {
+        $errors = $this->validate_email_content();
+        if ($errors) {
+            return ['errors' => $errors];
+        }
+
+        $message = (new HtmlSanitizer())->clean((string) $this->request->getPost('message'));
+        if (trim(strip_tags($message, '<img><hr>')) === '') {
+            return ['errors' => ['The Message field has no supported content.']];
+        }
+
+        $subject = trim((string) $this->request->getPost('subject'));
+        if (preg_match('/[\r\n]/', $subject)) {
+            return ['errors' => ['The Subject field cannot contain line breaks.']];
+        }
+
+        return ['subject' => $subject, 'message' => $message];
+    }
+
+    /**
+     * Number of rows with a valid subscriber email address.
+     */
+    protected function count_valid_emails(array $rows): int
     {
         $valid = 0;
 
@@ -315,6 +320,13 @@ class Newsletter extends AdminController
                 $valid++;
             }
         }
+
+        return $valid;
+    }
+
+    protected function render_email_compose(array $flow, array $rows, array $errors): string
+    {
+        $valid = $this->count_valid_emails($rows);
 
         return $this->render('newsletter/newsletter_email_compose', [
             'heading_title' => 'Compose Newsletter Email',

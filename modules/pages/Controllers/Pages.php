@@ -13,6 +13,7 @@ use Modules\Sitepanel\Models\EnquiryModel;
 use Modules\Sitepanel\Models\FaqModel;
 use Modules\Sitepanel\Models\MetaModel;
 use Modules\Sitepanel\Models\ReferralModel;
+use Modules\Team\Models\TeamModel;
 use Modules\Users\Libraries\CustomerAuth;
 use Throwable;
 
@@ -165,53 +166,9 @@ class Pages extends PublicController
                 $values[$field] = trim((string) $this->request->getPost($field));
             }
 
-            if (trim((string) $this->request->getPost('fax_number')) !== '') {
-                $sent = true; // Honeypot: shown as sent, nothing saved.
-            } else {
-                $v = new FormValidation($this->request, $this);
-                $v->set_data($values);
-                $v->set_rules('name', 'Full name', "required|max_length[61]|regex_match[/^[\\p{L}][\\p{L} .'\\-]*$/u]", ['regex_match' => 'Your name may contain only letters, spaces and . \' -']);
-                $v->set_rules('company', 'Company', 'max_length[60]');
-                $v->set_rules('email', 'Email', 'required|max_length[80]|valid_email');
-                $v->set_rules('phone', 'Phone', 'max_length[20]|regex_match[/^\+?[0-9][0-9 ()\-]{6,18}$/]', ['regex_match' => 'Please enter a valid phone number, e.g. +966 55 123 4567.']);
-                $v->set_rules('message', 'Requirements', 'max_length[5000]');
-                $errors = $v->run() ? [] : array_values($v->error_array());
-
-                [$first, $last] = array_pad(preg_split('/\s+/u', $values['name'], 2), 2, '');
-                if (! $errors && (mb_strlen($first) > 30 || mb_strlen($last) > 30)) {
-                    $errors[] = 'Please shorten your name (up to 30 characters for each part).';
-                }
-
-                if (! $errors) {
-                    $enquiry = new EnquiryModel();
-                    $ip      = $this->request->getIPAddress();
-                    $recent  = $enquiry->count_recent_from_ip($ip, 60);
-                    if ($recent !== false && $recent >= self::CONTACT_LIMIT_PER_HOUR) {
-                        $errors[] = 'We have already received several requests from your connection. Please try again later or contact us directly.';
-                    } else {
-                        $saved = ($recent !== false) && $enquiry->safe_insert('wl_enquiry', [
-                            'type'            => $product ? '3' : '1',
-                            'product_service' => $product ? mb_substr($product['product_name'] . ' (' . $product['product_code'] . ')', 0, 255) : 'Send Inquiry',
-                            'first_name'      => $first,
-                            'last_name'       => $last,
-                            'company_name'    => $values['company'] !== '' ? $values['company'] : null,
-                            'email'           => $values['email'],
-                            'mobile_number'   => $values['phone'] !== '' ? $values['phone'] : null,
-                            'message'         => $values['message'] !== '' ? $values['message'] : '(No message)',
-                            'ip_address'      => $ip,
-                            'reply_status'    => 'N',
-                            'receive_date'    => date('Y-m-d H:i:s'),
-                        ]);
-                        if ($saved) {
-                            $sent = true;
-                        } else {
-                            log_message('error', 'Pages::send_inquiry could not save an inquiry.');
-                            $errors[] = 'Your inquiry could not be sent right now. Please try again in a few minutes.';
-                        }
-                    }
-                }
-            }
-
+            // Honeypot: shown as sent, nothing saved.
+            $errors = $this->honeypot_filled() ? [] : $this->submit_inquiry($values, $product);
+            $sent   = $errors === [];
             if ($sent) {
                 $values = array_fill_keys($fields, '');
             }
@@ -225,6 +182,69 @@ class Pages extends PublicController
             'values'     => $values,
             'errors'     => $errors,
             'sent'       => $sent,
+        ]);
+    }
+
+    /**
+     * Validates a posted Send Inquiry form and saves it (send_inquiry()).
+     *
+     * @param array<string, string> $values The posted fields, trimmed
+     *
+     * @return list<string> Error messages; none when the inquiry was saved
+     */
+    private function submit_inquiry(array $values, ?array $product): array
+    {
+        $v = new FormValidation($this->request, $this);
+        $v->set_data($values);
+        $v->set_rules('name', 'Full name', 'required|max_length[61]|' . FormValidation::PERSON_NAME, ['regex_match' => FormValidation::PERSON_NAME_MESSAGE]);
+        $v->set_rules('company', 'Company', 'max_length[60]');
+        $v->set_rules('email', 'Email', 'required|max_length[80]|valid_email');
+        $v->set_rules('phone', 'Phone', 'max_length[20]|regex_match[/^\+?[0-9][0-9 ()\-]{6,18}$/]', ['regex_match' => 'Please enter a valid phone number, e.g. +966 55 123 4567.']);
+        $v->set_rules('message', 'Requirements', 'max_length[5000]');
+        if (! $v->run()) {
+            return array_values($v->error_array());
+        }
+
+        // first_name / last_name hold 30 characters each.
+        [$first, $last] = split_name($values['name']);
+        if (mb_strlen($first) > 30 || mb_strlen($last) > 30) {
+            return ['Please shorten your name (up to 30 characters for each part).'];
+        }
+
+        $enquiry = new EnquiryModel();
+        $over    = $this->over_hourly_limit($enquiry, self::CONTACT_LIMIT_PER_HOUR);
+        if ($over) {
+            return ['We have already received several requests from your connection. Please try again later or contact us directly.'];
+        }
+
+        // NULL: the count could not be read (database error), so nothing is saved.
+        if ($over === null || ! $this->save_inquiry($enquiry, $values, $first, $last, $product)) {
+            log_message('error', 'Pages::send_inquiry could not save an inquiry.');
+
+            return ['Your inquiry could not be sent right now. Please try again in a few minutes.'];
+        }
+
+        return [];
+    }
+
+    /**
+     * Saves a Send Inquiry message as a wl_enquiry row: type 3 (Manage
+     * Product Enquiry) about a product, else type 1 (Manage Enquiry).
+     */
+    private function save_inquiry(EnquiryModel $enquiry, array $values, string $first, string $last, ?array $product): bool
+    {
+        return $enquiry->safe_insert('wl_enquiry', [
+            'type'            => $product ? '3' : '1',
+            'product_service' => $product ? mb_substr($product['product_name'] . ' (' . $product['product_code'] . ')', 0, 255) : 'Send Inquiry',
+            'first_name'      => $first,
+            'last_name'       => $last,
+            'company_name'    => $values['company'] !== '' ? $values['company'] : null,
+            'email'           => $values['email'],
+            'mobile_number'   => $values['phone'] !== '' ? $values['phone'] : null,
+            'message'         => $values['message'] !== '' ? $values['message'] : '(No message)',
+            'ip_address'      => $this->request->getIPAddress(),
+            'reply_status'    => 'N',
+            'receive_date'    => date('Y-m-d H:i:s'),
         ]);
     }
 
@@ -258,51 +278,14 @@ class Pages extends PublicController
                 $values[$field] = trim((string) $this->request->getPost($field));
             }
 
-            if (trim((string) $this->request->getPost('fax_number')) !== '') {
-                $sent = true; // Honeypot: shown as sent, nothing saved.
+            if ($this->honeypot_filled()) {
+                $sent = true; // Honeypot: shown as sent (the values stay in the form), nothing saved.
             } else {
-                $name_rule = "required|max_length[100]|regex_match[/^[\\p{L}][\\p{L} .'\\-]*$/u]";
-                $v         = new FormValidation($this->request, $this);
-                $v->set_data($values + [$captcha->field() => (string) $this->request->getPost($captcha->field())]);
-                $v->set_rules('your_name', 'Your Name', $name_rule, ['regex_match' => 'Your name may contain only letters, spaces and . \' -']);
-                $v->set_rules('your_email', 'Your Email', 'required|max_length[120]|valid_email');
-                $v->set_rules('friend_name', 'Friend\'s Name', $name_rule, ['regex_match' => 'Your friend\'s name may contain only letters, spaces and . \' -']);
-                $v->set_rules('friend_email', 'Friend\'s Email', 'required|max_length[120]|valid_email');
-                $v->set_rules('message', 'Message', 'max_length[1000]');
-                $captcha->add_rule($v, self::REFER_CAPTCHA);
-                $all     = $v->run() ? [] : $v->error_array();
-                $cap_err = (string) ($all[$captcha->field()] ?? '');
-                unset($all[$captcha->field()]);
-                $errors = array_values($all);
-                if (! $errors && $cap_err === '' && strcasecmp($values['your_email'], $values['friend_email']) === 0) {
-                    $errors[] = 'Please enter your friend\'s email address, not your own.';
-                }
-
-                if (! $errors && $cap_err === '') {
-                    $referrals = new ReferralModel();
-                    $ip        = $this->request->getIPAddress();
-                    $recent    = $referrals->count_recent_from_ip($ip, 60);
-                    if ($recent !== false && $recent >= self::CONTACT_LIMIT_PER_HOUR) {
-                        $errors[] = 'We have already received several messages from your connection. Please try again later.';
-                    } elseif ($recent === false || ! $referrals->safe_insert(ReferralModel::TABLE, [
-                        'sender_name'   => $values['your_name'],
-                        'sender_email'  => strtolower($values['your_email']),
-                        'friend_name'   => $values['friend_name'],
-                        'friend_email'  => strtolower($values['friend_email']),
-                        'message'       => $values['message'] !== '' ? $values['message'] : null,
-                        'page_url'      => $product ? product_url($product['friendly_url']) : site_url(),
-                        'products_id'   => $product ? (int) $product['products_id'] : null,
-                        'customers_id'  => $customer ? (int) $customer['customers_id'] : null,
-                        'ip_address'    => $ip,
-                        'referral_date' => date('Y-m-d H:i:s'),
-                    ])) {
-                        log_message('error', 'Pages::refer_friend could not save a referral.');
-                        $errors[] = 'Your message could not be sent right now. Please try again in a few minutes.';
-                    } else {
-                        $this->email_friend($values, $product);
-                        $sent   = true;
-                        $values = array_merge(array_fill_keys($fields, ''), array_intersect_key($values, ['your_name' => 1, 'your_email' => 1]));
-                    }
+                [$errors, $cap_err] = $this->submit_referral($values, $captcha, $product, $customer);
+                if ($errors === [] && $cap_err === '') {
+                    $sent = true;
+                    // The form keeps only the sender's name and email.
+                    $values = array_merge(array_fill_keys($fields, ''), array_intersect_key($values, ['your_name' => 1, 'your_email' => 1]));
                 }
             }
         }
@@ -317,6 +300,73 @@ class Pages extends PublicController
             'sent'         => $sent,
             'page_scripts' => [Captcha::page_script()],
         ] + $captcha->view_data(self::REFER_CAPTCHA, 'referCaptcha', ['label' => 'Captcha', 'error' => $cap_err]));
+    }
+
+    /**
+     * Validates a posted Refer a Friend form, saves it and emails the
+     * friend (refer_friend()).
+     *
+     * @param array<string, string> $values The posted fields, trimmed
+     *
+     * @return array{0: list<string>, 1: string} [error messages, captcha error]; both empty when sent
+     */
+    private function submit_referral(array $values, Captcha $captcha, ?array $product, ?array $customer): array
+    {
+        $name_rule = 'required|max_length[100]|' . FormValidation::PERSON_NAME;
+        $v         = new FormValidation($this->request, $this);
+        $v->set_data($values + [$captcha->field() => (string) $this->request->getPost($captcha->field())]);
+        $v->set_rules('your_name', 'Your Name', $name_rule, ['regex_match' => FormValidation::PERSON_NAME_MESSAGE]);
+        $v->set_rules('your_email', 'Your Email', 'required|max_length[120]|valid_email');
+        $v->set_rules('friend_name', 'Friend\'s Name', $name_rule, ['regex_match' => 'Your friend\'s name may contain only letters, spaces and . \' -']);
+        $v->set_rules('friend_email', 'Friend\'s Email', 'required|max_length[120]|valid_email');
+        $v->set_rules('message', 'Message', 'max_length[1000]');
+        $captcha->add_rule($v, self::REFER_CAPTCHA);
+        $all     = $v->run() ? [] : $v->error_array();
+        $cap_err = (string) ($all[$captcha->field()] ?? '');
+        unset($all[$captcha->field()]);
+        if ($all !== [] || $cap_err !== '') {
+            return [array_values($all), $cap_err];
+        }
+
+        if (strcasecmp($values['your_email'], $values['friend_email']) === 0) {
+            return [['Please enter your friend\'s email address, not your own.'], ''];
+        }
+
+        $referrals = new ReferralModel();
+        $over      = $this->over_hourly_limit($referrals, self::CONTACT_LIMIT_PER_HOUR);
+        if ($over) {
+            return [['We have already received several messages from your connection. Please try again later.'], ''];
+        }
+
+        // NULL: the count could not be read (database error), so nothing is saved.
+        if ($over === null || ! $this->save_referral($referrals, $values, $product, $customer)) {
+            log_message('error', 'Pages::refer_friend could not save a referral.');
+
+            return [['Your message could not be sent right now. Please try again in a few minutes.'], ''];
+        }
+
+        $this->email_friend($values, $product);
+
+        return [[], ''];
+    }
+
+    /**
+     * Saves a Refer a Friend message (wl_referrals, Sitepanel > Manage Refer a Friend).
+     */
+    private function save_referral(ReferralModel $referrals, array $values, ?array $product, ?array $customer): bool
+    {
+        return $referrals->safe_insert(ReferralModel::TABLE, [
+            'sender_name'   => $values['your_name'],
+            'sender_email'  => strtolower($values['your_email']),
+            'friend_name'   => $values['friend_name'],
+            'friend_email'  => strtolower($values['friend_email']),
+            'message'       => $values['message'] !== '' ? $values['message'] : null,
+            'page_url'      => $product ? product_url($product['friendly_url']) : site_url(),
+            'products_id'   => $product ? (int) $product['products_id'] : null,
+            'customers_id'  => $customer ? (int) $customer['customers_id'] : null,
+            'ip_address'    => $this->request->getIPAddress(),
+            'referral_date' => date('Y-m-d H:i:s'),
+        ]);
     }
 
     /**
@@ -374,20 +424,15 @@ class Pages extends PublicController
      */
     protected function team_members(): array
     {
-        try {
-            $rows = db_connect()->table('wl_team')->select('name, designation, photo, team_type')
-                ->where('status', '1')->orderBy('sort_order', 'ASC')->orderBy('team_id', 'DESC')->get()->getResultArray();
-        } catch (Throwable $e) {
-            log_message('error', 'Pages::team_members could not load the team: ' . $e->getMessage());
+        $rows = (new TeamModel())->get_active(TeamModel::TYPE_TEAM);
+        if ($rows === false) {
+            log_message('error', 'Pages::team_members could not load the team.');
 
             return [];
         }
 
         $team = [];
         foreach ($rows as $row) {
-            if ((string) $row['team_type'] === 'partner') {
-                continue;
-            }
             $team[] = [
                 'name'        => (string) $row['name'],
                 'designation' => (string) $row['designation'],
@@ -493,13 +538,13 @@ class Pages extends PublicController
         $values = $data['contact_values'];
 
         // Honeypot: a hidden field people never fill in.
-        if (trim((string) $this->request->getPost('fax_number')) !== '') {
+        if ($this->honeypot_filled()) {
             redirect_now($url . '?sent=1');
         }
 
         $v = new FormValidation($this->request, $this);
         $v->set_data($values + [$captcha->field() => (string) $this->request->getPost($captcha->field())]);
-        $v->set_rules('name', 'Full name', 'required|max_length[61]');
+        $v->set_rules('name', 'Full name', 'required|max_length[61]|' . FormValidation::PERSON_NAME, ['regex_match' => FormValidation::PERSON_NAME_MESSAGE]);
         $v->set_rules('email', 'Email address', 'required|max_length[80]|valid_email');
         $v->set_rules(
             'phone',
@@ -515,7 +560,7 @@ class Pages extends PublicController
         $data['contact_errors'] = $v->run() ? [] : $v->error_array();
 
         // first_name / last_name hold 30 characters each.
-        [$first, $last] = array_pad(preg_split('/\s+/u', $values['name'], 2), 2, '');
+        [$first, $last] = split_name($values['name']);
         if ($values['name'] !== '' && ! isset($data['contact_errors']['name']) && (mb_strlen($first) > 30 || mb_strlen($last) > 30)) {
             $data['contact_errors']['name'] = 'Please shorten your name (up to 30 characters for each part).';
         }
@@ -526,15 +571,15 @@ class Pages extends PublicController
         }
 
         $enquiry = new EnquiryModel();
-        $ip      = $this->request->getIPAddress();
-        $recent  = $enquiry->count_recent_from_ip($ip, 60);
-        if ($recent !== false && $recent >= self::CONTACT_LIMIT_PER_HOUR) {
+        $over    = $this->over_hourly_limit($enquiry, self::CONTACT_LIMIT_PER_HOUR);
+        if ($over) {
             $data['contact_error'] = 'We have already received several requests from your connection. Please try again later or contact us directly.';
 
             return $data;
         }
 
-        $saved = ($recent !== false) && $enquiry->safe_insert('wl_enquiry', [
+        // NULL: the count could not be read (database error), so nothing is saved.
+        $saved = $over !== null && $enquiry->safe_insert('wl_enquiry', [
             'type'            => '1',
             'first_name'      => $first,
             'last_name'       => $last,
@@ -542,7 +587,7 @@ class Pages extends PublicController
             'mobile_number'   => $values['phone'] !== '' ? $values['phone'] : null,
             'product_service' => $values['subject'] !== '' ? $values['subject'] : null,
             'message'         => $values['message'],
-            'ip_address'      => $ip,
+            'ip_address'      => $this->request->getIPAddress(),
             'reply_status'    => 'N',
             'receive_date'    => date('Y-m-d H:i:s'),
         ]);

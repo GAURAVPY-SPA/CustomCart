@@ -36,10 +36,12 @@ use Modules\Users\Libraries\CustomerAuth;
  *                                        ?variant=1&color=&size= answers JSON (price and stock of
  *                                        one colour × size); POST action=review | enquiry
  *
- * Listing filters are GET parameters, so a filtered page can be bookmarked:
- * q (name / code), cat (a sub-category), price[] (PRICE_RANGES keys),
- * availability[] (in-stock / out-of-stock), colors[], sizes[], brands[],
- * sort (ProductModel::SORTS), page.
+ * Listing filters are POSTed by the listing's form and kept in the session
+ * per listing (LISTING_KEY, render_listing()), not in the address: cat (a
+ * sub-category), price[] (PRICE_RANGES keys), availability[] (in-stock /
+ * out-of-stock), colors[], sizes[], brands[], fabrics[], sort (SORT_LABELS).
+ * The header search q is POSTed to /products (listing()). Only the page
+ * number is a GET parameter (?page=).
  *
  * Reviews (wl_review) are saved pending approval in Sitepanel > Product
  * Reviews, as in the reference; product enquiries go to Sitepanel > Manage
@@ -123,10 +125,7 @@ class Products extends PublicController
             $this->unavailable('Store::index could not load categories.');
         }
 
-        $featured = $this->product_model->search_public(['flag' => 'is_featured'], 'newest', 0, 4);
-        if (is_array($featured) && ! $featured) {
-            $featured = $this->product_model->search_public([], 'newest', 0, 4);
-        }
+        $featured = $this->product_model->get_public_flagged('is_featured', 4);
 
         return $this->render('Modules\Products\Views\store_categories', [
             'page_meta'  => ['title' => 'Online Store' . self::TITLE_SUFFIX],
@@ -134,7 +133,7 @@ class Products extends PublicController
             'category'   => null,
             'categories' => $this->with_images($categories),
             'featured'   => is_array($featured) ? $featured : [],
-            'variant_ids' => is_array($featured) ? (array) $this->product_model->variant_product_ids(array_map('intval', array_column($featured, 'products_id'))) : [],
+            'variant_ids' => is_array($featured) ? $this->variant_ids($featured) : [],
         ]);
     }
 
@@ -338,11 +337,12 @@ class Products extends PublicController
             'colors'      => $colors,
             'sizes'       => $sizes,
             'variants'    => $variants,
+            'initial'     => $this->initial_data($product, $variants),
             'media'       => is_array($media) ? $media : [],
             'reviews'     => is_array($reviews) ? $reviews : [],
             'rating'      => is_array($rating) ? $rating : ['average' => 0, 'count' => 0],
             'related'     => $related,
-            'variant_ids' => (array) $this->product_model->variant_product_ids(array_map('intval', array_column($related, 'products_id'))),
+            'variant_ids' => $this->variant_ids($related),
             'in_wishlist' => $in_wishlist,
             'forms'       => $forms,
             'faqs'        => (new FaqModel())->get_product_faqs($id) ?: [],
@@ -428,7 +428,7 @@ class Products extends PublicController
             'availability' => count($avail) === 1 ? ($avail[0] === 'in-stock' ? 'in' : 'out') : '',
         ];
 
-        $per_page = config(Shop::class)->perPage;
+        $per_page = $shop->perPage;
         $page     = max(1, (int) $this->request->getGet('page')); // the only part kept in the address (?page=)
         $products = $this->product_model->search_public($filters, $sort, ($page - 1) * $per_page, $per_page);
         if ($products === false) {
@@ -439,7 +439,6 @@ class Products extends PublicController
             $this->not_found_page(); // a page past the last one
         }
 
-        $query = []; // filters and sort are in the session, not the page links
         $filtered = $keyword !== '' || $cat || $prices || $avail || $selected['colors'] || $selected['sizes'] || $selected['brands'] || $selected['fabrics'];
 
         $page_meta = $category ? $this->category_meta($category) : ['title' => 'All Products' . self::TITLE_SUFFIX];
@@ -467,9 +466,10 @@ class Products extends PublicController
             'sort'             => $sort,
             'filtered'         => $filtered,
             'products'         => $products,
-            'variant_ids'      => (array) $this->product_model->variant_product_ids(array_map('intval', array_column($products, 'products_id'))),
+            'variant_ids'      => $this->variant_ids($products),
             'total'            => $total,
-            'pager'            => ['page' => $page, 'total' => $total, 'per_page' => $per_page, 'url' => $url, 'query' => $query],
+            // No query in the page links: filters and sort are in the session.
+            'pager'            => ['page' => $page, 'total' => $total, 'per_page' => $per_page, 'url' => $url, 'query' => []],
             'form_url'         => $url,
         ]);
     }
@@ -571,6 +571,39 @@ class Products extends PublicController
     }
 
     /**
+     * Price and stock the product page shows first: the preselected
+     * combination's variant_data(), else (no orderable combination) the
+     * product's own price and quantity in the same shape (stock_id NULL,
+     * colour / size 0, never "low").
+     */
+    protected function initial_data(array $product, array $variants): array
+    {
+        if ($variants['selected'] !== null) {
+            return $variants['list'][$variants['selected']];
+        }
+
+        $prices    = ProductModel::prices($product);
+        $available = max(0, (int) $product['product_quantity']);
+
+        return [
+            'ok'           => true,
+            'stock_id'     => null,
+            'color'        => 0,
+            'size'         => 0,
+            'available'    => $available,
+            'low'          => false,
+            'price'        => $prices['sale'],
+            'regular'      => $prices['regular'],
+            'saving'       => $prices['saving'],
+            'price_text'   => display_price($prices['sale']),
+            'regular_text' => display_price($prices['regular']),
+            'saving_text'  => 'Save ' . display_price($prices['saving']),
+            'status_text'  => $available <= 0 ? 'Out of Stock' : 'In Stock',
+            'max'          => max(1, min($available, config(Shop::class)->maxQuantity)),
+        ];
+    }
+
+    /**
      * ?variant=1&color=<id>&size=<id>: price and stock of one combination (JSON).
      */
     protected function variant_json(array $product, array $colors, array $sizes): ResponseInterface
@@ -604,14 +637,14 @@ class Products extends PublicController
         foreach (array_keys($form['values']) as $field) {
             $form['values'][$field] = trim((string) $this->request->getPost($field));
         }
-        if (trim((string) $this->request->getPost('fax_number')) !== '') {
+        if ($this->honeypot_filled()) {
             session()->setFlashdata('review_sent', '1');
             redirect_now($done);
         }
 
         $v = new FormValidation($this->request, $this);
         $v->set_data($form['values']);
-        $v->set_rules('poster_name', 'Name', "required|max_length[60]|regex_match[/^[\\p{L}][\\p{L} .'\\-]*$/u]", ['regex_match' => 'Your name may contain only letters, spaces and . \' -']);
+        $v->set_rules('poster_name', 'Name', 'required|max_length[60]|' . FormValidation::PERSON_NAME, ['regex_match' => FormValidation::PERSON_NAME_MESSAGE]);
         $v->set_rules('email', 'Email', 'required|max_length[120]|valid_email');
         $v->set_rules('rate', 'Rating', 'required|in_list[1,2,3,4,5]', ['required' => 'Please choose a rating.', 'in_list' => 'Please choose a rating from 1 to 5 stars.']);
         $v->set_rules('comment', 'Review', 'required|min_length[3]|max_length[2000]');
@@ -622,15 +655,15 @@ class Products extends PublicController
         }
 
         $reviews = new ReviewModel();
-        $ip      = $this->request->getIPAddress();
-        $recent  = $reviews->count_recent_from_ip($ip, 60);
-        if ($recent !== false && $recent >= self::REVIEWS_PER_HOUR) {
+        $over    = $this->over_hourly_limit($reviews, self::REVIEWS_PER_HOUR);
+        if ($over) {
             $form['errors'] = ['We have already received several reviews from your connection. Please try again later.'];
 
             return $form;
         }
 
-        $saved = $recent !== false && $reviews->safe_insert(ReviewModel::TABLE, [
+        // NULL: the count could not be read (database error), so nothing is saved.
+        $saved = $over !== null && $reviews->safe_insert(ReviewModel::TABLE, [
             'rev_type'    => 'P',
             'prod_id'     => (int) $product['products_id'],
             'mem_id'      => $customer ? (int) $customer['customers_id'] : null,
@@ -638,7 +671,7 @@ class Products extends PublicController
             'email'       => strtolower($form['values']['email']),
             'rate'        => (int) $form['values']['rate'],
             'comment'     => $form['values']['comment'],
-            'ip_address'  => $ip,
+            'ip_address'  => $this->request->getIPAddress(),
             'posted_date' => date('Y-m-d H:i:s'),
             'status'      => '0',
         ]);
@@ -665,7 +698,7 @@ class Products extends PublicController
         foreach (array_keys($form['values']) as $field) {
             $form['values'][$field] = trim((string) $this->request->getPost($field));
         }
-        if (trim((string) $this->request->getPost('fax_number')) !== '') {
+        if ($this->honeypot_filled()) {
             session()->setFlashdata('enquiry_sent', '1');
             redirect_now($done);
         }
@@ -673,7 +706,7 @@ class Products extends PublicController
         $captcha = new Captcha();
         $v       = new FormValidation($this->request, $this);
         $v->set_data($form['values'] + [$captcha->field() => (string) $this->request->getPost($captcha->field())]);
-        $v->set_rules('full_name', 'Full name', "required|max_length[60]|regex_match[/^[\\p{L}][\\p{L} .'\\-]*$/u]", ['regex_match' => 'Your name may contain only letters, spaces and . \' -']);
+        $v->set_rules('full_name', 'Full name', 'required|max_length[60]|' . FormValidation::PERSON_NAME, ['regex_match' => FormValidation::PERSON_NAME_MESSAGE]);
         $v->set_rules('email', 'Email address', 'required|max_length[80]|valid_email');
         $v->set_rules('mobile', 'Mobile number', 'required|max_length[20]|regex_match[/^\+?[0-9][0-9 ()\-]{6,18}$/]', ['regex_match' => 'Please enter a valid mobile number, e.g. +65 9123 4567.']);
         $v->set_rules('subject', 'Subject', 'max_length[120]');
@@ -686,24 +719,25 @@ class Products extends PublicController
         }
 
         $enquiry = new EnquiryModel();
-        $ip      = $this->request->getIPAddress();
-        $recent  = $enquiry->count_recent_from_ip($ip, 60);
-        if ($recent !== false && $recent >= self::ENQUIRIES_PER_HOUR) {
+        $over    = $this->over_hourly_limit($enquiry, self::ENQUIRIES_PER_HOUR);
+        if ($over) {
             $form['errors'] = ['We have already received several enquiries from your connection. Please try again later or contact us directly.'];
 
             return $form;
         }
 
-        $names = preg_split('/\s+/', $form['values']['full_name'], 2);
-        $saved = $recent !== false && $enquiry->safe_insert('wl_enquiry', [
+        // wl_enquiry.first_name / last_name are VARCHAR(30): each part is cut to fit (the full name may be 60).
+        [$first, $last] = split_name($form['values']['full_name']);
+        // NULL: the count could not be read (database error), so nothing is saved.
+        $saved = $over !== null && $enquiry->safe_insert('wl_enquiry', [
             'type'            => '3',
             'product_service' => mb_substr($product['product_name'] . ' (' . $product['product_code'] . ')', 0, 255),
-            'first_name'      => mb_substr($names[0], 0, 30),
-            'last_name'       => mb_substr($names[1] ?? '', 0, 30),
+            'first_name'      => mb_substr($first, 0, 30),
+            'last_name'       => mb_substr($last, 0, 30),
             'email'           => $form['values']['email'],
             'mobile_number'   => $form['values']['mobile'],
             'message'         => ($form['values']['subject'] !== '' ? 'Subject: ' . $form['values']['subject'] . "\n\n" : '') . $form['values']['message'],
-            'ip_address'      => $ip,
+            'ip_address'      => $this->request->getIPAddress(),
             'reply_status'    => 'N',
             'receive_date'    => date('Y-m-d H:i:s'),
         ]);
@@ -730,14 +764,22 @@ class Products extends PublicController
     protected function with_images(array $categories): array
     {
         foreach ($categories as &$row) {
-            $row['image_url'] = upload_image_url('category', $row['category_image'], 600, 436, 'C');
-            if ($row['image_url'] === '') {
-                $first            = $this->product_model->search_public(['category_id' => (int) $row['category_id']], 'default', 0, 1);
-                $row['image_url'] = product_image_url(is_array($first) && $first ? $first[0]['image'] : null);
-            }
+            // A product photo in its card size (product_image_url()'s default 600 × 440).
+            $row['image_url'] = category_image_url($row, 600, 436, 440);
         }
 
         return $categories;
+    }
+
+    /**
+     * Ids of the products among these rows that have colour / size options
+     * (the product cards' "choose options" link).
+     *
+     * @param list<array> $rows Product rows (products_id)
+     */
+    private function variant_ids(array $rows): array
+    {
+        return (array) $this->product_model->variant_product_ids(array_map('intval', array_column($rows, 'products_id')));
     }
 
     /**

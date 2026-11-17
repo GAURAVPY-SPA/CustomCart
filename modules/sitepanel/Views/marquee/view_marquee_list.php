@@ -11,24 +11,7 @@ echo sp_view('includes/header'); ?>
 		<?php endif; ?>
 	</header>
 
-	<form class="sp-filters" method="get" action="<?php echo site_url('sitepanel/marquee'); ?>" role="search" aria-label="Search marquee items">
-		<div>
-			<label class="form-label" for="filter-keyword">Text</label>
-			<input class="form-control" type="search" id="filter-keyword" name="keyword" maxlength="80" value="<?php echo html_escape($keyword); ?>">
-		</div>
-		<div>
-			<label class="form-label" for="filter-status">Status</label>
-			<select class="form-select" id="filter-status" name="status">
-				<option value="">All</option>
-				<option value="1"<?php echo $status === '1' ? ' selected' : ''; ?>>Active</option>
-				<option value="0"<?php echo $status === '0' ? ' selected' : ''; ?>>Inactive</option>
-			</select>
-		</div>
-		<div class="sp-filters-actions">
-			<button class="btn sp-btn-primary" type="submit">Search</button>
-			<?php if ($filtered): ?><a class="btn sp-btn-outline" href="<?php echo site_url('sitepanel/marquee'); ?>">Clear</a><?php endif; ?>
-		</div>
-	</form>
+	<?php echo sp_view('includes/status_filter', array('filter_form' => array('url' => 'sitepanel/marquee', 'aria_label' => 'Search marquee items', 'label' => 'Text', 'keyword' => $keyword, 'status' => $status))); ?>
 
 	<?php if ($res === FALSE): ?>
 		<p class="sp-empty mb-0">Marquee items could not be loaded. Please try again shortly.</p>

@@ -34,25 +34,6 @@ class FaqModel extends BaseModel
     }
 
     /**
-     * Active FAQs for the website, in display order.
-     *
-     * @return array|false
-     */
-    public function get_active_faqs()
-    {
-        if (! $this->db_ready()) {
-            return false;
-        }
-
-        return $this->all_rows($this->table(self::TABLE)
-            ->select('faq_id, faq_question, faq_answer')
-            ->where('status', '1')
-            ->orderBy('sort_order', 'ASC')
-            ->orderBy(self::PRIMARY_KEY, 'DESC')
-            ->get());
-    }
-
-    /**
      * Active FAQs shown on the website's FAQ page (is_general = '1'), in display order.
      *
      * @return array|false

@@ -6,6 +6,7 @@ use App\Controllers\PublicController;
 use App\Libraries\Captcha;
 use App\Libraries\FormValidation;
 use Modules\Cart\Libraries\DeliveryAddress;
+use Modules\Sitepanel\Models\NewsletterModel;
 use Modules\Users\Libraries\CustomerAuth;
 use Modules\Users\Libraries\CustomerMailer;
 use Modules\Users\Models\CustomerModel;
@@ -62,7 +63,7 @@ class Users extends PublicController
 
     public function login(): string
     {
-        if (($signed_in = $this->auth->current_type()) !== null) {
+        if ($this->auth->current_type() !== null) {
             redirect_now(CustomerAuth::home_path());
         }
 
@@ -101,7 +102,7 @@ class Users extends PublicController
 
     public function register(): string
     {
-        if (($signed_in = $this->auth->current_type()) !== null) {
+        if ($this->auth->current_type() !== null) {
             redirect_now(CustomerAuth::home_path());
         }
 
@@ -118,7 +119,7 @@ class Users extends PublicController
             if (trim((string) $this->request->getPost('website')) !== '') {
                 redirect_now('register');
             }
-            [$values['first_name'], $values['last_name']] = array_pad(preg_split('/\s+/u', $values['full_name'], 2), 2, '');
+            [$values['first_name'], $values['last_name']] = split_name($values['full_name']);
             $values['mobile_number'] = DeliveryAddress::digits($values['mobile_number']);
 
             $errors = $this->validate_registration($values);
@@ -140,7 +141,7 @@ class Users extends PublicController
                     $this->auth->start_session($customer);
                     (new CustomerMailer())->welcome($customer);
                     if ($values['newsletter'] === '1') {
-                        $this->customers->subscribe_newsletter($customer['user_name'], $values['first_name']);
+                        (new NewsletterModel())->subscribe(strtolower(trim((string) $customer['user_name'])), $values['first_name']);
                     }
                     session()->setFlashdata('shop_success', 'Welcome, ' . $customer['first_name'] . '! Your account has been created.');
                     redirect_now($this->auth->take_return_path());
@@ -166,10 +167,8 @@ class Users extends PublicController
     protected function validate_registration(array $values): array
     {
         $v = new FormValidation($this->request, $this);
-        $v->set_rules('full_name', 'Full Name', "trim|required|min_length[3]|max_length[100]|regex_match[/^[\\p{L}][\\p{L} .'\\-]*$/u]", ['regex_match' => 'The {field} may contain only letters, spaces and . \' -']);
+        $v->set_rules('full_name', 'Full Name', 'trim|required|min_length[3]|max_length[100]|' . FormValidation::PERSON_NAME, ['regex_match' => 'The {field} may contain only letters, spaces and . \' -']);
         $v->set_rules('email', 'Email Address', 'trim|required|valid_email|max_length[120]');
-        // Saudi-only check removed:
-        // $v->set_rules('mobile_number', 'Mobile Number', ['required', ['saudi_mobile', static fn ($value) => preg_match(config(\Config\Shop::class)->mobilePattern, DeliveryAddress::digits((string) $value)) === 1]], ['saudi_mobile' => 'Please enter a Saudi mobile number, e.g. +966 5X XXX XXXX.']);
         $v->set_rules('mobile_number', 'Mobile Number', ['required', ['valid_mobile', static fn ($value) => DeliveryAddress::valid_mobile((string) $value)]], ['valid_mobile' => DeliveryAddress::mobile_message('')]);
         $this->password_rules($v, 'password', 'Password');
         $v->set_rules('confirm_password', 'Confirm Password', 'required|matches[password]', ['matches' => 'The passwords do not match.']);

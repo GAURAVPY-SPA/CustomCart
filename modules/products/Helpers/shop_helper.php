@@ -51,35 +51,6 @@ if (! function_exists('order_url')) {
     }
 }
 
-if (! function_exists('shop_delivery_note')) {
-    /**
-     * The delivery rule of the store (design: "Island-wide delivery S$6.00, free
-     * on orders of S$150 and above."), from the Settings amounts in a ShopCart::summary(),
-     * HTML-safe (display_price()).
-     */
-    function shop_delivery_note(array $summary): string
-    {
-        if ($summary['shipping_charges'] <= 0) {
-            return 'Free island-wide delivery.';
-        }
-
-        return 'Island-wide delivery ' . display_price($summary['shipping_charges'])
-            . ($summary['free_delivery_above'] > 0 ? ', free on orders of ' . display_price($summary['free_delivery_above']) . ' and above' : '') . '.';
-    }
-}
-
-if (! function_exists('shop_gst_label')) {
-    /**
-     * "GST (9%)" for a rate: no trailing zeros ("9", "8.5").
-     *
-     * @param float|int|string $percent
-     */
-    function shop_gst_label($percent): string
-    {
-        return 'GST (' . rtrim(rtrim(number_format((float) $percent, 2, '.', ''), '0'), '.') . '%)';
-    }
-}
-
 if (! function_exists('product_url')) {
     /**
      * Address of a product page from its friendly_url (at the site root: /<friendly_url>).
@@ -162,19 +133,25 @@ if (! function_exists('upload_image_url')) {
     }
 }
 
-if (! function_exists('order_status_badge')) {
+if (! function_exists('category_image_url')) {
     /**
-     * Bootstrap badge classes of an order or item status (design: acc-order-history.htm).
+     * Image of a category card: the category's image cropped to width ×
+     * height (upload_image_url()), else the photo of its first product
+     * (product_image_url(), $width × $photo_height, default $height), else
+     * the store's placeholder.
+     *
+     * @param array $category Public category row (category_id, category_image)
      */
-    function order_status_badge(string $status): string
+    function category_image_url(array $category, int $width, int $height, ?int $photo_height = null): string
     {
-        return match ($status) {
-            'Delivered', 'Closed'                  => 'bg-success-subtle text-success-emphasis',
-            'Dispatched', 'Ready For Dispatch'     => 'bg-info-subtle text-info-emphasis',
-            'Canceled', 'Cancelled', 'Rejected', 'Deleted' => 'bg-secondary-subtle text-secondary-emphasis',
-            'Return', 'Returned'                   => 'bg-danger-subtle text-danger-emphasis',
-            default                                => 'bg-warning-subtle text-warning-emphasis',
-        };
+        $url = upload_image_url('category', $category['category_image'], $width, $height, 'C');
+        if ($url !== '') {
+            return $url;
+        }
+
+        $first = (new ProductModel())->search_public(['category_id' => (int) $category['category_id']], 'default', 0, 1);
+
+        return product_image_url(is_array($first) && $first ? $first[0]['image'] : null, $width, $photo_height ?? $height);
     }
 }
 

@@ -47,7 +47,7 @@ class Testimonial extends AdminController
     public function index(): string
     {
         $filter = [
-            'keyword' => mb_substr(trim((string) $this->request->getGet('keyword')), 0, 80),
+            'keyword' => $this->keyword_param(),
             'status'  => $this->status_param((string) $this->request->getGet('status')),
             'source'  => $this->source_param((string) $this->request->getGet('source')),
         ];
@@ -137,18 +137,9 @@ class Testimonial extends AdminController
      */
     protected function list_query(): array
     {
-        $query = [
-            'keyword' => mb_substr(trim((string) $this->request->getPost('keyword')), 0, 80),
-            'status'  => $this->status_param((string) $this->request->getPost('status_filter')),
-            'source'  => $this->source_param((string) $this->request->getPost('source')),
-        ];
+        $source = $this->source_param((string) $this->request->getPost('source'));
 
-        return array_filter($query, static fn ($v) => $v !== '');
-    }
-
-    protected function status_param(string $value): string
-    {
-        return in_array($value, ['1', '0'], true) ? $value : '';
+        return parent::list_query() + ($source !== '' ? ['source' => $source] : []);
     }
 
     protected function source_param(string $value): string
