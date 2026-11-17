@@ -488,9 +488,18 @@ class Cart extends PublicController
         if ($member && ! (new AddressModel())->get_default_address((int) $member['customers_id'])) {
             (new AddressModel())->save_default_address((int) $member['customers_id'], DeliveryAddress::to_book($delivery));
         }
-        // Newsletter (wl_newsletters) unless already subscribed; a failure does not affect the order.
-        if (($info['newsletter'] ?? '') === '1' && (new NewsletterModel())->subscribe($order['email'], trim($info['first_name'] . ' ' . $info['last_name'])) === false) {
-            log_message('error', 'Cart::place_order could not save the newsletter subscription of ' . $placed['invoice_number'] . '.');
+        // Newsletter (wl_newsletters) unless already subscribed. The order is
+        // already saved, so a failure here (even a database exception) is only
+        // logged and the checkout carries on.
+        if (($info['newsletter'] ?? '') === '1') {
+            try {
+                $subscribed = (new NewsletterModel())->subscribe($order['email'], trim($info['first_name'] . ' ' . $info['last_name']));
+            } catch (\Throwable $e) {
+                $subscribed = false;
+            }
+            if ($subscribed === false) {
+                log_message('error', 'Cart::place_order could not save the newsletter subscription of ' . $placed['invoice_number'] . '.');
+            }
         }
 
         $saved = $orders->get_order_by_id($placed['order_id']);

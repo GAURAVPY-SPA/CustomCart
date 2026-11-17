@@ -13,7 +13,6 @@ use Modules\Sitepanel\Models\EnquiryModel;
 use Modules\Sitepanel\Models\FaqModel;
 use Modules\Sitepanel\Models\MetaModel;
 use Modules\Sitepanel\Models\ReferralModel;
-use Modules\Team\Models\TeamModel;
 use Modules\Users\Libraries\CustomerAuth;
 use Throwable;
 
@@ -424,15 +423,22 @@ class Pages extends PublicController
      */
     protected function team_members(): array
     {
-        $rows = (new TeamModel())->get_active(TeamModel::TYPE_TEAM);
-        if ($rows === false) {
-            log_message('error', 'Pages::team_members could not load the team.');
+        // Every type except 'partner' (rows with an empty type are shown too),
+        // so this does not use TeamModel::get_active(), which matches one type.
+        try {
+            $rows = db_connect()->table('wl_team')->select('name, designation, photo, team_type')
+                ->where('status', '1')->orderBy('sort_order', 'ASC')->orderBy('team_id', 'DESC')->get()->getResultArray();
+        } catch (Throwable $e) {
+            log_message('error', 'Pages::team_members could not load the team: ' . $e->getMessage());
 
             return [];
         }
 
         $team = [];
         foreach ($rows as $row) {
+            if ((string) $row['team_type'] === 'partner') {
+                continue;
+            }
             $team[] = [
                 'name'        => (string) $row['name'],
                 'designation' => (string) $row['designation'],
